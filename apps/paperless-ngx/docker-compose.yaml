@@ -1,0 +1,134 @@
+# =============================================================================
+# Paperless-ngx – Docker Compose Stack
+# Services: Webserver, PostgreSQL, Redis (Broker), Gotenberg, Apache Tika
+#
+# Supported architectures: amd64, arm, arm64
+#
+# First-time setup:
+#   1. Adjust all values marked with [CHANGE ON NEW INSTANCE] in docker-compose.env
+#   2. docker compose pull
+#   3. docker compose run --rm webserver createsuperuser
+#   4. docker compose up -d
+#
+# Update: docker compose pull && docker compose up -d
+# Docs:   https://docs.paperless-ngx.com
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Redis – Message broker for asynchronous task queue processing
+  # ---------------------------------------------------------------------------
+  broker:
+    image: docker.io/library/redis:7
+    restart: unless-stopped
+    volumes:
+      - ./data/redisdata:/data
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL – Primary relational database for Paperless-ngx
+  # Credentials are sourced from docker-compose.env
+  # ---------------------------------------------------------------------------
+  db:
+    image: docker.io/library/postgres:16
+    restart: unless-stopped
+    volumes:
+      - ./data/pgdata:/var/lib/postgresql/data
+#    env_file: docker-compose.env
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB}        # .env
+      POSTGRES_USER:     ${POSTGRES_USER}      # .env
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}  # .env
+    healthcheck:
+      # $$ escaping prevents Compose from expanding variables at parse time
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Paperless-ngx Webserver – Main application container
+  #
+  # Configuration is split across two sources:
+  #   - docker-compose.env  → user settings (OCR, timezone, secret key, etc.)
+  #   - environment block   → internal topology (service URLs, fixed settings)
+  #
+  # Port binding: host 127.0.0.1:18181 → container :8000
+  #   Bound to loopback only – intended to be exposed via a reverse proxy.
+  # ---------------------------------------------------------------------------
+  webserver:
+    image: ghcr.io/paperless-ngx/paperless-ngx:2.20
+    # Available image tags: https://hub.docker.com/r/paperlessngx/paperless-ngx/tags
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy  # wait for DB healthcheck before starting
+      broker:
+        condition: service_started
+      gotenberg:
+        condition: service_started
+      tika:
+        condition: service_started
+    ports:
+      - "${PAPERLESS_EXPORT_PORT:-8080}:8000"  # loopback only – use a reverse proxy for public access
+    volumes:
+      - ${PAPERLESS_DATA_DIR:?PAPERLESS_DATA_DIR must not be empty}:/usr/src/paperless/data
+      - ${PAPERLESS_MEDIA_DIR:?PAPERLESS_MEDIA_DIR must not be empty}:/usr/src/paperless/media
+      - ${PAPERLESS_EXPORT_DIR:?PAPERLESS_EXPORT_DIR must not be empty}:/usr/src/paperless/export
+      - ${PAPERLESS_BACKUP_DIR:?PAPERLESS_BACKUP_DIR must not be empty}:/backup
+      - ${PAPERLESS_CONSUMPTION_DIR:?PAPERLESS_CONSUMPTION_DIR must not be empty}:/usr/src/paperless/consume
+      # Alternative consume source – NFS share (e.g. network scanner):
+      # - /storage-nas01/_KONSUM:/usr/src/paperless/consume
+      # - consume:/usr/src/paperless/consume   ← requires named volume block below
+    # User-configurable settings loaded from file (OCR, timezone, secret, etc.)
+    # ---
+    # Internal service wiring – these values depend on the Docker network topology
+    # and should not be changed unless service names are renamed above.
+    environment:
+      PAPERLESS_REDIS:                   redis://broker:6379
+      PAPERLESS_DBHOST:                  db
+      PAPERLESS_DBNAME:                  ${POSTGRES_DB}
+      PAPERLESS_DBUSER:                  ${POSTGRES_USER}
+      PAPERLESS_DBPASS:                  ${POSTGRES_PASSWORD}
+      PAPERLESS_URL:                     ${PAPERLESS_URL}              # sourced from .env [CHANGE ON NEW INSTANCE]
+      PAPERLESS_TIKA_ENABLED:            1
+      PAPERLESS_TIKA_GOTENBERG_ENDPOINT: http://gotenberg:3000
+      PAPERLESS_TIKA_ENDPOINT:           http://tika:9998
+      # Consumer polling settings – sourced from .env to avoid duplication
+      PAPERLESS_CONSUMER_POLLING:            ${PAPERLESS_CONSUMER_POLLING}
+      PAPERLESS_CONSUMER_POLLING_DELAY:      ${PAPERLESS_CONSUMER_POLLING_DELAY}
+      PAPERLESS_CONSUMER_POLLING_RETRY_COUNT: ${PAPERLESS_CONSUMER_POLLING_RETRY_COUNT}
+      PAPERLESS_CONSUMER_RECURSIVE:          ${PAPERLESS_CONSUMER_RECURSIVE}
+      PAPERLESS_EMAIL_PARSE_DEFAULT_LAYOUT:  ${PAPERLESS_EMAIL_PARSE_DEFAULT_LAYOUT}
+      PAPERLESS_EMAIL_TASK_CRON: ${PAPERLESS_EMAIL_TASK_CRON}
+
+  # ---------------------------------------------------------------------------
+  # Gotenberg – Converts Office documents (Word, Excel, LibreOffice) to PDF
+  # JavaScript is disabled for security; only local tmp files are allowed.
+  # Used specifically for .eml file conversion (no external content).
+  # ---------------------------------------------------------------------------
+  gotenberg:
+    image: docker.io/gotenberg/gotenberg:8.25
+    restart: unless-stopped
+    env_file: docker-compose.env
+    command:
+      - "gotenberg"
+      - "--chromium-disable-javascript=true"
+      - "--chromium-allow-list=file:///tmp/.*"
+
+  # ---------------------------------------------------------------------------
+  # Apache Tika – Extracts text from Office documents for OCR processing
+  # ---------------------------------------------------------------------------
+  tika:
+    image: docker.io/apache/tika:latest
+    env_file: docker-compose.env
+    restart: unless-stopped
+
+# Optional: named NFS volume for the consume directory
+# volumes:
+#   consume:
+#     driver_opts:
+#       type: "nfs"
+#       o: "addr=192.168.178.123,nolock,soft,rw"
+#       device: ":/Scanner"

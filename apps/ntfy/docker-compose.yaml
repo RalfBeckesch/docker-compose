@@ -1,0 +1,65 @@
+services:
+  ntfy:
+    image: binwiederhier/ntfy:v2.19
+    container_name: ntfy
+    command:
+      - serve
+    environment:
+      NTFY_BASE_URL: ${NTFY_BASE_URL:?NTFY_BASE_URL must be set}
+      NTFY_BEHIND_PROXY: ${NTFY_BEHIND_PROXY:-false}
+      NTFY_DATABASE_BACKEND: postgres
+      NTFY_DATABASE_URL: postgres://${POSTGRES_USER:-ntfy}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/${POSTGRES_DB:-ntfy_db}?sslmode=disable
+      TZ: ${NTFY_TZ:-UTC}
+      NTFY_AUTH_DEFAULT_ACCESS: "deny-all"
+      NTFY_ENABLE_LOGIN: "true"
+      NTFY_REQUIRE_LOGIN: "true"
+      NTFY_ENABLE_SIGNUP: "false"
+      NTFY_ATTACHMENT_CACHE_DIR: "/var/cache/ntfy/attachments"
+      NTFY_SMTP_SENDER_ADDR: ${NTFY_SMTP_SENDER_ADDR:-mailhost.org:587}
+      NTFY_SMTP_SENDER_FROM: ${NTFY_SMTP_SENDER_FROM:-noreply@mailhost.org}
+      NTFY_SMTP_SENDER_USER: ${NTFY_SMTP_SENDER_USER:-mailout@mailhost.org}
+      NTFY_SMTP_SENDER_PASS: ${NTFY_SMTP_SENDER_PASS:?NTFY_SMTP_SENDER_PASS must be set}
+      NTFY_AUTH_USERS: ${NTFY_AUTH_USERS:?NTFY_AUTH_USERS must be set}
+      NTFY_AUTH_ACCESS: ${NTFY_AUTH_ACCESS}
+      NTFY_AUTH_TOKENS: ${NTFY_AUTH_TOKENS}
+      NTFY_CACHE_DURATION: ${NTFY_CACHE_DURATION:-12h}
+    user: ${NTFY_UID:-1000}:${NTFY_GID:-1000} # optional: replace with your own user/group or uid/gid
+    volumes:
+      - ${NTFY_CACHE_DIR:-./ntfy-cache}:/var/cache/ntfy
+      - ${NTFY_CONFIG_DIR:-./ntfy-config}:/etc/ntfy
+    ports:
+      - ${NTFY_EXPOSE_PORT:-8080}:80
+    healthcheck: # optional: remember to adapt the host:port to your environment
+        test: ["CMD-SHELL", "wget -q --tries=1 http://localhost:80/v1/health -O - | grep -Eo '\"healthy\"\\s*:\\s*true' || exit 1"]
+        interval: 60s
+        timeout: 10s
+        retries: 3
+        start_period: 40s
+    restart: unless-stopped
+    init: true # needed, if healthcheck is used. Prevents zombie processes
+    depends_on:
+      db:
+        condition: service_healthy
+        restart: true
+    networks:
+      - ntfy-net
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ntfy}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_DB: ${POSTGRES_DB:-ntfy_db}
+    volumes:
+      - ${POSTGRES_DATA_DIR:-./postgres}:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      retries: 5
+      start_period: 30s
+      timeout: 10s
+    networks:
+      - ntfy-net
+networks:
+  ntfy-net:
+    driver: bridge

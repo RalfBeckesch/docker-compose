@@ -1,0 +1,41 @@
+
+# NTFY_CACHE_DIR=./ntfy-cache
+# NTFY_CONFIG_DIR=./ntfy-config
+# NTFY_UID=1000
+# NTFY_GID=1000
+# NTFY_TZ=UTC
+#
+
+# Hostname must contain a valid value
+#
+# NTFY_BASE_URL=https://some.domain.com
+# NTFY_BEHIND_PROXY=true
+
+# Exposed port must be set
+#
+# NTFY_EXPOSE_PORT=8080
+
+# NTFY_SMTP_SENDER_ADDR="some.mailhost.org:587"
+# NTFY_SMTP_SENDER_FROM="noreply@lhost.org"
+# NTFY_SMTP_SENDER_USER="mailout@lhost.org"
+
+# SMTP password is mandatory
+#
+# NTFY_SMTP_SENDER_PASS="secretPassword"
+
+# Next three values are mandatory if you want to use any authentication
+# and can be created with the Config Generator
+# 	https://docs.ntfy.sh/config/#config-generator
+# NTFY_AUTH_USERS=""
+# NTFY_AUTH_ACCESS=""
+# NTFY_AUTH_TOKENS=""
+
+# NTFY_CACHE_DURATION="12h"
+
+# POSTGRES_DATA_DIR=./postgres
+# POSTGRES_USER="ntfy"
+
+# Postgres password is mandatory
+# 
+# POSTGRES_PASSWORD=ntfy
+# POSTGRES_DB=ntfy_db

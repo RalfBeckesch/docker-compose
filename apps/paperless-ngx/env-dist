@@ -1,0 +1,117 @@
+###############################################################################
+# Paperless-ngx – Environment Variables
+# Docs: https://docs.paperless-ngx.com/configuration/
+#
+# IMPORTANT: This file contains sensitive data (passwords, secret key).
+#            Never commit this file to a public Git repository!
+#            Recommended .gitignore entry: docker-compose.env
+#
+# [CHANGE ON NEW INSTANCE] marks values that MUST be set when deploying fresh.
+###############################################################################
+
+# =============================================================================
+# Compose / Project
+# =============================================================================
+COMPOSE_PROJECT_NAME=paperless-xyz
+
+# =============================================================================
+# Public URL
+# [CHANGE ON NEW INSTANCE] – set to the domain under which Paperless is reachable.
+# Must match your reverse proxy configuration exactly (no trailing slash).
+# =============================================================================
+PAPERLESS_URL=https://dms-xyz.mydomain.org
+
+# =============================================================================
+# Database (PostgreSQL)
+# [CHANGE ON NEW INSTANCE] – use unique, strong credentials.
+# These values must match what your existing database was initialized with.
+# Changing them on an existing instance requires a DB migration / user rename!
+# =============================================================================
+POSTGRES_DB=paperless
+POSTGRES_USER=paperless
+POSTGRES_PASSWORD=SECRET   # [CHANGE ON NEW INSTANCE] – use a strong password!
+
+# =============================================================================
+# Security – Secret Key
+# Used to sign sessions and tokens. Must be a long random string.
+# [CHANGE ON NEW INSTANCE] – generate a new one with: openssl rand -hex 64
+# WARNING: Changing this on an existing instance invalidates all active sessions.
+# =============================================================================
+#PAPERLESS_SECRET_KEY=change-me
+PAPERLESS_SECRET_KEY=change-me!!!
+
+
+PAPERLESS_EXPORT_PORT="8182"
+
+# =============================================================================
+# User / Permissions
+# UID and GID of the host user running Docker.
+# Paperless uses these to write files to the consume/media/export directories.
+# Find your values with: id -u && id -g
+# [CHANGE ON NEW INSTANCE] – adjust if your host user differs from 1000/1000.
+# =============================================================================
+#USERMAP_UID=1000
+#USERMAP_GID=1000
+USERMAP_UID=1000
+USERMAP_GID=1000
+
+# =============================================================================
+# Timezone
+# [CHANGE ON NEW INSTANCE] – set to your server's local timezone.
+# Full list: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+# =============================================================================
+#PAPERLESS_TIME_ZONE=America/Los_Angeles
+PAPERLESS_TIME_ZONE=Europe/Berlin
+
+# =============================================================================
+# OCR – Text Recognition
+# =============================================================================
+
+# Primary OCR language – set to the language most documents are written in.
+# [CHANGE ON NEW INSTANCE] – adjust to match your document language(s).
+#PAPERLESS_OCR_LANGUAGE=eng
+PAPERLESS_OCR_LANGUAGE=deu
+
+# Additional language packs installed in the container (space-separated).
+# Note: this is separate from PAPERLESS_OCR_LANGUAGE above.
+# The container ships with: English, German, Italian, Spanish, French by default.
+# Available packages: https://packages.debian.org/search?keywords=tesseract-ocr-
+#PAPERLESS_OCR_LANGUAGES=tur ces
+PAPERLESS_OCR_LANGUAGES=eng fra frk kan ltz nld ron rus
+
+# =============================================================================
+# Data Directories
+# Defines where Paperless stores its data inside the container.
+# These match the volume mounts defined in docker-compose.yaml.
+# Only change these if you also adjust the corresponding volume mounts.
+# =============================================================================
+PAPERLESS_MEDIA_DIR=./data/ppl-media
+PAPERLESS_CONSUMPTION_DIR=./data/ppl-consume
+PAPERLESS_EXPORT_DIR=./data/ppl-export
+PAPERLESS_DATA_DIR=./data/ppl-data
+PAPERLESS_BACKUP_DIR=./data/ppl-backup
+
+# =============================================================================
+# Consumer – File Watcher
+# Polling is required when the consume directory is on NFS/SMB/CIFS.
+# Set PAPERLESS_CONSUMER_POLLING=0 to use inotify on local volumes instead.
+# =============================================================================
+PAPERLESS_CONSUMER_POLLING=60
+PAPERLESS_CONSUMER_POLLING_DELAY=20
+# Note: was "30" in the original .env – the Compose inline value of 20 was
+# the effective active value; unified here to avoid future confusion.
+PAPERLESS_CONSUMER_POLLING_RETRY_COUNT=3
+PAPERLESS_CONSUMER_RECURSIVE=true
+
+# =============================================================================
+# Email Parsing
+# Layout used when consuming emails: 1 = default, 2 = full-page layout
+# =============================================================================
+PAPERLESS_EMAIL_PARSE_DEFAULT_LAYOUT=2
+
+# =============================================================================
+# Email Polling
+# Cron style polling intervall (minute hour day-of-month month day-of-week)
+# In this line, emails are polled every 2 minutes
+# =============================================================================
+PAPERLESS_EMAIL_TASK_CRON="*/2 * * * *"
