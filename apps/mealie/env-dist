@@ -1,0 +1,88 @@
+# =============================================================================
+# Mealie – Environment Distribution File
+# Copy this file to ".env" and fill in your values before starting the stack.
+#
+#   cp env-dist .env
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Docker Image & Container
+# -----------------------------------------------------------------------------
+
+# Host binding and port for the Mealie web UI.
+# Format: <bind_address>:<host_port> — the container always listens on port 9000.
+# Bind to 127.0.0.1 when running behind a reverse proxy (recommended).
+EXPORT_PORT=127.0.0.1:8080
+
+# -----------------------------------------------------------------------------
+# General Settings
+# -----------------------------------------------------------------------------
+
+# Public-facing base URL of your Mealie instance (must match your reverse proxy).
+BASE_URL=https://mealie.example.com
+
+# Timezone for the container (affects scheduled tasks, timestamps, etc.)
+# See full list: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+TZ=Europe/Berlin
+
+# Application log verbosity. Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
+LOG_LEVEL=INFO
+
+# Allow new user self-registration via the web interface.
+# Recommended: keep "false" and invite users manually via the admin panel.
+ALLOW_SIGNUP=false
+
+# -----------------------------------------------------------------------------
+# File System & Permissions
+# -----------------------------------------------------------------------------
+
+# Host path for persistent Mealie data (recipes, images, backups, config).
+MEALIE_DATA=./mealie-data
+
+# UID and GID the application process runs as inside the container.
+# Set these to match the owner of the MEALIE_DATA directory on the host
+# to avoid permission issues.
+UID=1000
+GID=1000
+
+# -----------------------------------------------------------------------------
+# PostgreSQL Database
+# -----------------------------------------------------------------------------
+
+# Host path for persistent PostgreSQL data files.
+POSTGRES_DATA=./postgres-data
+
+# Database name created on first startup.
+POSTGRES_DB=mealie
+
+# PostgreSQL credentials — used by both the postgres and mealie services.
+POSTGRES_USER=mealie
+POSTGRES_PASSWORD=your-postgres-password-here
+
+# -----------------------------------------------------------------------------
+# SMTP / Email Settings
+# -----------------------------------------------------------------------------
+
+# Hostname of your outbound SMTP server.
+SMTP_HOST=mail.example.com
+
+# SMTP port — common values:
+#   25  → STARTTLS (relay)
+#   587 → STARTTLS (submission, recommended)
+#   465 → Implicit TLS / SSL
+SMTP_PORT=587
+
+# Sender address shown in outgoing emails (invitations, password resets, etc.)
+SMTP_FROM_EMAIL=noreply@mealie.example.com
+
+# SMTP authentication credentials.
+SMTP_USER=mail-out@example.com
+SMTP_PASSWORD=your-smtp-password-here
+
+# -----------------------------------------------------------------------------
+# OpenAI Integration (optional)
+# -----------------------------------------------------------------------------
+
+# API key for OpenAI-powered features (e.g. recipe parsing from plain text/URL).
+# Leave empty to disable AI features.
+OPENAI_API_KEY=
