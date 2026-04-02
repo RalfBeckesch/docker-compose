@@ -1,0 +1,9 @@
+# Required for extra OCR languages
+tessdata_trainingData=./data/trainingData
+extraConfigs=./data/configs
+customFiles=./data/customFiles
+logs=./data/logs
+pipeline=./data/pipeline
+DISABLE_ADDITIONAL_FEATURES=false
+LANGS=de_DE
+EXPORT_PORT=16780
