@@ -1,0 +1,25 @@
+# docker-compose.yml
+version: '3'
+
+services:
+  bitwarden:
+    #    image: vaultwarden/server:latest
+    image: vaultwarden/server:${VERSION:-latest}
+    restart: unless-stopped
+    ports:
+      - ${EXPORT_PORT:-8080}:80
+    volumes:
+      - ${DATA:-./vaultwarden-data}:/data
+    environment:
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?ADMIN_TOKEN must not be empty}
+      WEBSOCKET_ENABLED: ${WEBSOCKET_ENABLED:-true}
+      SIGNUPS_ALLOWED: ${SIGNUPS_ALLOWED:-true}
+      DOMAIN: ${DOMAIN:-https:/vaultwarden.example.com}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_SECURITY: ${SMTP_SECURITY}
+      SMTP_FROM: ${SMTP_FROM}
+      SMTP_USERNAME: ${SMTP_USERNAME}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SIGNUPS_DOMAINS_WHITELIST: ${SIGNUPS_DOMAINS_WHITELIST}
+      
