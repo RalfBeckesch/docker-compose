@@ -53,12 +53,12 @@ The file `env-dist` is the configuration template. Copy it to `.env` before depl
 | `POSTGRES_DB` | `mealie` | Database name created on first startup |
 | `POSTGRES_USER` | `mealie` | PostgreSQL username — shared by both services |
 | `POSTGRES_PASSWORD` | _(required)_ | PostgreSQL password — shared by both services |
-| `SMTP_HOST` | _(required)_ | Hostname of the outbound SMTP server |
-| `SMTP_PORT` | _(required)_ | SMTP port (`25`, `587` for STARTTLS, `465` for implicit TLS) |
-| `SMTP_FROM_EMAIL` | _(required)_ | Sender address for outgoing emails (invitations, password resets) |
-| `SMTP_USER` | _(required)_ | SMTP authentication username |
-| `SMTP_PASSWORD` | _(required)_ | SMTP authentication password |
-| `OPENAI_API_KEY` | _(empty)_ | OpenAI API key for AI-assisted recipe parsing — leave empty to disable |
+| `SMTP_HOST` | _(Required For email)_ | Hostname of the outbound SMTP server |
+| `SMTP_PORT` | _(Required For email)_ | SMTP port (`25`, `587` for STARTTLS, `465` for implicit TLS) |
+| `SMTP_FROM_EMAIL` | _(Required For email)_ | Sender address for outgoing emails (invitations, password resets) |
+| `SMTP_USER` | _(Required For email)_ | SMTP authentication username |
+| `SMTP_PASSWORD` | _(Required For email)_ | SMTP authentication password |
+| `OPENAI_API_KEY` | _(Required For AI support)_ | OpenAI API key for AI-assisted recipe parsing — leave empty to disable |
 
 > ⚠️ **Keep your `.env` out of version control** — add it to `.gitignore` since it contains
 > database credentials and API keys.
