@@ -1,0 +1,122 @@
+# =============================================================================
+# Nextcloud Apache Stack – Environment Variables
+# =============================================================================
+# Copy this file to ".env" and adjust the values before starting the stack:
+#   cp env-dist .env
+#   chmod 600 .env
+#
+# Important:
+#   This file is a template and intentionally contains placeholder credentials.
+#   Replace all CHANGEME values before deploying the stack.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Instance
+# -----------------------------------------------------------------------------
+
+# Prefix used in all "container_name" entries.
+# If left empty, Docker Compose falls back to "nextcloud".
+# INSTANCE_NAME=
+INSTANCE_NAME=nextcloud-apache
+
+# -----------------------------------------------------------------------------
+# PostgreSQL Database
+# -----------------------------------------------------------------------------
+
+# PostgreSQL image tag.
+# The alpine variant is smaller and usually preferred for container deployments.
+# POSTGRES_VERSION=16-alpine
+POSTGRES_VERSION=16-alpine
+
+# Host path for persistent PostgreSQL data files.
+# POSTGRES_DATA=./data/postgres
+POSTGRES_DATA=./data/postgres
+
+# Database name created on first startup.
+# POSTGRES_DB=nextcloud
+POSTGRES_DB=nextcloud
+
+# PostgreSQL username used by Nextcloud.
+# POSTGRES_USER=nextcloud
+POSTGRES_USER=nextcloud
+
+# PostgreSQL password.
+# Replace with a strong password before first startup.
+# POSTGRES_PASSWORD=ENTER_A_SECURE_PASSWORD
+POSTGRES_PASSWORD=CHANGEME
+
+# -----------------------------------------------------------------------------
+# Nextcloud Application
+# -----------------------------------------------------------------------------
+
+# Nextcloud image tag used by the app and cron containers.
+NEXTCLOUD_VERSION=31-apache
+
+# Host path for Nextcloud user data.
+# This should point to a persistent storage location with enough capacity.
+# NEXTCLOUD_DATA=SET_TO_YOUR_NEXTCLOUD_DATA_DIR
+NEXTCLOUD_DATA=/srv/nextcloud-data
+
+# Host path for the Nextcloud application directory.
+# This contains the app installation, installed apps, and related files.
+# NEXTCLOUD_APP_DATA=SET_TO_YOUR_NEXTCLOUD_APP_DATA_DIR
+NEXTCLOUD_APP_DATA=./data/nextcloud-app
+
+# Host path for the Nextcloud configuration directory.
+# This includes config.php and related instance configuration.
+# NEXTCLOUD_CONFIG=SET_TO_YOUR_NEXTCLOUD_CONFIG_DIR
+NEXTCLOUD_CONFIG=./data/nextcloud-config
+
+# Nextcloud admin account.
+# These values are only evaluated during the very first startup.
+# NEXTCLOUD_ADMIN_USER=admin
+NEXTCLOUD_ADMIN_USER=admin
+
+# Nextcloud admin password.
+# Replace with a strong password before first startup.
+# NEXTCLOUD_ADMIN_PASSWORD=ENTER_ADMIN_PASSWORD
+NEXTCLOUD_ADMIN_PASSWORD=CHANGEME
+
+# Domain configuration.
+# These values are only relevant during the initial setup.
+#
+# NEXTCLOUD_TRUSTED_DOMAINS:
+# Space-separated list of hostnames or IPs that are allowed to access this
+# Nextcloud instance. Add every public hostname you plan to use.
+#
+# NEXTCLOUD_URL:
+# Public base URL of the instance. This should match the reverse proxy and
+# external access URL exactly.
+#
+# Example for multiple domains:
+#   localhost cloud.example.com
+NEXTCLOUD_TRUSTED_DOMAINS=localhost nc.mycloud.org
+NEXTCLOUD_URL=https://nc.mycloud.org
+
+# HTTP port exposed by the container.
+# Default is 8080.
+# When running behind Traefik / Nginx Proxy Manager / Caddy, you may prefer
+# binding to localhost only, for example:
+# HTTP_PORT="127.0.0.1:12345"
+HTTP_PORT=8080
+
+# Subnet of the upstream reverse proxy, used for X-Forwarded-For handling.
+# Typical Docker subnet for Traefik / NPM: 172.16.0.0/12
+# Only relevant on first startup.
+TRUSTED_PROXIES="172.16.0.0/12 127.0.0.1"
+
+# Default phone region for the Contacts app (ISO 3166-1 alpha-2).
+NC_PHONE_REGION=DE
+
+# -----------------------------------------------------------------------------
+# Redis
+# -----------------------------------------------------------------------------
+
+# Redis image tag.
+# REDIS_VERSION=7-alpine
+REDIS_VERSION=7-alpine
+
+# Redis password used for cache and file locking.
+# Replace with a strong password before first startup.
+# REDIS_PASSWORD=ENTER_REDIS_PASSWORD
+REDIS_PASSWORD=CHANGEME

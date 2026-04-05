@@ -1,0 +1,269 @@
+# =============================================================================
+# NEXTCLOUD – High-Performance Docker Compose Setup (Apache2 variant)
+# =============================================================================
+# Stack overview:
+# 1. PostgreSQL 16  – Database backend (faster than MySQL/MariaDB for Nextcloud)
+# 2. Redis 7        – File locking + distributed cache (in-memory instead of DB)
+# 3. Nextcloud      – Official Apache image with built-in Apache2 + mod_php
+# 4. Imaginary      – External preview service (libvips, ~10x faster than GD)
+# 5. Cron           – Background jobs (more reliable than web-cron)
+#
+# Why Apache instead of FPM + Nginx?
+# - The nextcloud:apache image is the official and best-tested image
+# - No external Nginx configuration required → no rewrite / redirect-loop issues
+# - mod_php runs directly inside the Apache process → no FastCGI overhead
+# - .htaccess is managed by Nextcloud itself → rewrite rules stay correct
+# - Much simpler setup with fewer failure points
+# - For homelab / medium load (< 50 users), there is no measurable performance
+#   advantage over FPM + Nginx
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # DATABASE: PostgreSQL 16
+  # ---------------------------------------------------------------------------
+  # Why PostgreSQL instead of MariaDB?
+  # - Nextcloud documentation recommends PostgreSQL for better performance and stability
+  # - Better JSONB performance (Activity app, metadata, app internals)
+  # - No MariaDB-specific workarounds needed (e.g. innodb_read_only_compressed)
+  # - Proven with large file counts and many concurrent connections
+  # ---------------------------------------------------------------------------
+  db:
+    image: postgres:${POSTGRES_VERSION:?POSTGRES_VERSION must be set}
+    # Alpine variant: ~75 MB instead of ~400 MB, with essentially identical performance
+    container_name: ${INSTANCE_NAME:-nextcloud}-db
+    restart: unless-stopped
+    volumes:
+      - ${POSTGRES_DATA:?POSTGRES_DATA must be set}:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-nextcloud}
+      POSTGRES_USER: ${POSTGRES_USER:-nextcloud}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+    # PostgreSQL performance tuning
+    # Values are tuned for hosts with 4–8 GB RAM.
+    # On smaller systems, reduce shared_buffers accordingly.
+    # Rule of thumb: shared_buffers = ~25% of available RAM.
+    command: >
+      postgres
+      -c shared_buffers=256MB
+      -c effective_cache_size=768MB
+      -c work_mem=32MB
+      -c maintenance_work_mem=64MB
+      -c max_connections=100
+      -c wal_buffers=16MB
+      -c checkpoint_completion_target=0.9
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nextcloud} -d ${POSTGRES_DB:-nextcloud}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - nextcloud_internal
+
+  # ---------------------------------------------------------------------------
+  # CACHE & FILE LOCKING: Redis 7
+  # ---------------------------------------------------------------------------
+  # Why Redis?
+  # - Nextcloud uses Redis for:
+  #   1. Distributed memory cache → faster session and app data access
+  #   2. Transactional file locking → CRITICAL: prevents deadlocks during
+  #      concurrent access (e.g. desktop client + web access at the same time)
+  # - Without Redis: locking goes through PostgreSQL → 5–50 ms per operation
+  # - With Redis: locking stays in RAM → < 1 ms → major throughput gain
+  # - save "" + appendonly no: no disk writes → pure in-memory operation
+  #   (Nextcloud handles Redis restarts without permanent data loss)
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:${REDIS_VERSION:?REDIS_VERSION must be set}
+    container_name: ${INSTANCE_NAME:-nextcloud}-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --save ""
+      --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "$$REDIS_PASSWORD", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - nextcloud_internal
+
+  # ---------------------------------------------------------------------------
+  # NEXTCLOUD APP: Official Apache2 image
+  # ---------------------------------------------------------------------------
+  # Why nextcloud:apache instead of nextcloud:fpm?
+  # - Fully self-contained: Apache + mod_rewrite + PHP in one image
+  # - .htaccess rewrite rules are managed automatically by Nextcloud
+  # - No external reverse proxy required (except for SSL termination)
+  # - Only one exposed port: 80 (SSL handled by the upstream proxy)
+  #
+  # PHP tuning via environment variables:
+  # - PHP_MEMORY_LIMIT: memory available per PHP request (minimum 512M recommended)
+  # - PHP_UPLOAD_LIMIT: maximum allowed upload size
+  #
+  # OPcache is activated via the mounted opcache.ini:
+  # - Compiled PHP bytecode is cached in RAM → no recompilation on each request
+  #   → 3–5x faster PHP execution
+  # - PHP 8.x JIT compiler can additionally reduce CPU load on some workloads
+  # ---------------------------------------------------------------------------
+  app:
+    image: nextcloud:${NEXTCLOUD_VERSION:-latest}
+    # 31 = Nextcloud 31.x (current stable branch as of April 2026)
+    # For updates: docker compose pull && docker compose up -d
+    container_name: ${INSTANCE_NAME:-nextcloud}-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      # HTTP only — SSL is terminated by the upstream reverse proxy
+      # (Traefik, Nginx Proxy Manager, Caddy, etc.)
+      # For direct HTTPS operation, add port 443 and a certificate volume
+      - "${HTTP_PORT:-8080}:80"
+    volumes:
+      - ${NEXTCLOUD_DATA:?NEXTCLOUD_DATA must be set}:/var/www/html/data
+      - ${NEXTCLOUD_APP_DATA:?NEXTCLOUD_APP_DATA must be set}:/var/www/html
+      - ${NEXTCLOUD_CONFIG:?NEXTCLOUD_CONFIG must be set}:/var/www/html/config
+      # OPcache tuning via bind mount (survives image updates)
+      - ./php/opcache.ini:/usr/local/etc/php/conf.d/opcache-custom.ini:ro
+      # Apache configuration for performance tuning (KeepAlive, compression, headers)
+      - ./apache/nextcloud.conf:/etc/apache2/sites-available/000-default.conf:ro
+    environment:
+      # --- Database ---
+      POSTGRES_HOST: db
+      POSTGRES_DB: ${POSTGRES_DB:-nextcloud}
+      POSTGRES_USER: ${POSTGRES_USER:-nextcloud}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+      # --- Redis ---
+      REDIS_HOST: redis
+      REDIS_HOST_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_HOST_PORT: 6379
+
+      # --- Nextcloud admin account (evaluated only during the very first startup) ---
+      NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_ADMIN_USER:-admin}
+      NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD:?NEXTCLOUD_ADMIN_PASSWORD must be set}
+
+      # --- Domains & reverse proxy ---
+      NEXTCLOUD_TRUSTED_DOMAINS: ${NEXTCLOUD_TRUSTED_DOMAINS:-localhost}
+      OVERWRITEPROTOCOL: https
+      OVERWRITECLIURL: ${NEXTCLOUD_URL:-https://localhost}
+      # TRUSTED_PROXIES: IP address or subnet of the upstream proxy
+      # Required so Nextcloud receives the real client IP via X-Forwarded-For
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.16.0.0/12}
+
+      # --- PHP limits ---
+      PHP_MEMORY_LIMIT: 512M
+      PHP_UPLOAD_LIMIT: 10G
+
+      # --- Default phone region (ISO 3166-1 alpha-2) ---
+      NC_default_phone_region: ${NC_PHONE_REGION:-DE}
+
+    networks:
+      - nextcloud_internal
+
+  # ---------------------------------------------------------------------------
+  # PREVIEW SERVICE: Imaginary
+  # ---------------------------------------------------------------------------
+  # Why Imaginary?
+  # - Nextcloud's built-in GD / ImageMagick preview generator blocks PHP workers
+  #   while thumbnails are generated (CPU- and memory-intensive)
+  # - Imaginary (libvips) is up to 10x faster and uses ~8x less RAM
+  # - Supports modern formats: HEIC/HEIF (iPhone), AVIF, WebP, PDF, TIFF
+  # - Runs in isolation → no impact on Apache worker availability
+  # - Must be enabled in config.php after first startup via post-install.sh
+  # ---------------------------------------------------------------------------
+  imaginary:
+    image: ghcr.io/nextcloud-releases/aio-imaginary:latest
+    container_name: ${INSTANCE_NAME:-nextcloud}-imaginary
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      PORT: 9000
+    command: -concurrency 20 -enable-url-source
+    # concurrency 20 = maximum number of parallel image-processing threads
+    # On weaker hardware (< 4 CPU cores), reduce this to 5–10
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - nextcloud_internal
+
+  # ---------------------------------------------------------------------------
+  # BACKGROUND JOBS: Cron
+  # ---------------------------------------------------------------------------
+  # Why a dedicated cron container instead of web-cron?
+  # - Web-cron is triggered only by incoming HTTP requests → unreliable
+  # - A dedicated container runs every 5 minutes independently of HTTP traffic
+  # - Processes: file indexing, preview generation, cleanup tasks,
+  #   notifications, app update checks, activity cleanup, etc.
+  # - Uses the same image as the app service → guaranteed compatibility
+  # ---------------------------------------------------------------------------
+  cron:
+    image: nextcloud:${NEXTCLOUD_VERSION:-latest}
+    container_name: ${INSTANCE_NAME:-nextcloud}-cron
+    restart: unless-stopped
+    depends_on:
+      - app
+    volumes:
+      - ${NEXTCLOUD_DATA:?NEXTCLOUD_DATA must be set}:/var/www/html/data
+      - ${NEXTCLOUD_APP_DATA:?NEXTCLOUD_APP_DATA must be set}:/var/www/html
+      - ${NEXTCLOUD_CONFIG:?NEXTCLOUD_CONFIG must be set}:/var/www/html/config
+      # OPcache tuning via bind mount (survives image updates)
+      - ./php/opcache.ini:/usr/local/etc/php/conf.d/opcache-custom.ini:ro
+      # Apache configuration is mounted here as well to keep runtime behaviour consistent
+      - ./apache/nextcloud.conf:/etc/apache2/sites-available/000-default.conf:ro
+    entrypoint: /cron.sh
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_DB: ${POSTGRES_DB:-nextcloud}
+      POSTGRES_USER: ${POSTGRES_USER:-nextcloud}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_HOST_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_HOST_PORT: 6379
+    networks:
+      - nextcloud_internal
+
+# # =============================================================================
+# # VOLUMES
+# # =============================================================================
+# volumes:
+#   db_data:
+#     # PostgreSQL data
+#     # Backup example:
+#     # docker run --rm -v nextcloud_db_data:/data -v $(pwd):/backup \
+#     #   alpine tar czf /backup/db_backup.tar.gz /data
+#     # driver: local
+#
+#   nextcloud_data:
+#     # Nextcloud files: PHP code, user data, apps, config
+#     # For large data volumes, switch to external storage:
+#     # driver_opts:
+#     #   type: none
+#     #   o: bind
+#     #   device: /mnt/data/nextcloud
+#     # driver: local
+
+# =============================================================================
+# NETWORKS
+# =============================================================================
+networks:
+  nextcloud_internal:
+    driver: bridge
+    # All containers communicate internally over this bridge network.
+    # Only the Nextcloud app exposes a public host port.
+    # DB, Redis, and Imaginary are not reachable from outside.
