@@ -20,7 +20,7 @@ The webserver waits for `db` to pass its healthcheck before starting. Gotenberg 
 
 1. Copy the env template and fill in all required values:
    ```bash
-   cp env-dist-2 docker-compose.env
+   cp env-dist docker-compose.env
    ```
 2. Pull all images:
    ```bash
