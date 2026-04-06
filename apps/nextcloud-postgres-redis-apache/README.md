@@ -158,3 +158,31 @@ All persistent data is stored on the host under the paths defined in `.env`:
 
 The stack exposes HTTP on `HTTP_PORT` and expects SSL termination to happen in an upstream reverse proxy
 such as Traefik, Nginx Proxy 
+
+### Apache Reverse Proxy for `collabora CODE`
+
+```
+AllowEncodedSlashes On
+ProxyPreserveHost On
+ProxyRequests Off
+
+# Browser assets
+ProxyPass        /browser http://127.0.0.1:9980/browser retry=0
+ProxyPassReverse /browser http://127.0.0.1:9980/browser
+
+# Discovery / capabilities
+ProxyPass        /hosting/discovery    http://127.0.0.1:9980/hosting/discovery retry=0
+ProxyPassReverse /hosting/discovery    http://127.0.0.1:9980/hosting/discovery
+ProxyPass        /hosting/capabilities http://127.0.0.1:9980/hosting/capabilities retry=0
+ProxyPassReverse /hosting/capabilities http://127.0.0.1:9980/hosting/capabilities
+
+# WebSocket
+ProxyPassMatch   ^/cool/(.*)/ws$ ws://127.0.0.1:9980/cool/$1/ws nocanon
+
+# Admin websocket
+ProxyPass        /cool/adminws ws://127.0.0.1:9980/cool/adminws
+
+# REST / download / upload
+ProxyPass        /cool http://127.0.0.1:9980/cool
+ProxyPassReverse /cool http://127.0.0.1:9980/cool
+```
