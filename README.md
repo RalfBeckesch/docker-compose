@@ -1,6 +1,6 @@
 # 🐳 docker-compose
 
-Personal Docker Compose configurations for self-hosted services — production-ready, opinionated, and built for real infrastructure (Proxmox, Debian).
+Personal Docker Compose configurations for self-hosted services — production-ready, opinionated, and built for real infrastructure at customers and at my homelab (usually Proxmox -> Debian VMs).
 
 ---
 
@@ -9,7 +9,7 @@ Personal Docker Compose configurations for self-hosted services — production-r
 Each directory contains a self-contained Compose stack:
 
 - `docker-compose.yaml` — service definitions
-- `.env.example` — environment variable template (no real secrets ever committed)
+- `env-dist` — environment variable template (no real secrets ever committed)
 - `README.md` — service-specific notes (where applicable)
 
 ---
@@ -59,7 +59,7 @@ These configurations are designed to run on:
 
 - **Hypervisor:** Proxmox VE
 - **Guest OS:** Debian / Alpine Linux
-- **Reverse proxy:** upstream proxy (Traefik / Nginx Proxy Manager) handles SSL termination
+- **Reverse proxy:** upstream proxy (Apache2 + Certbot / Traefik / Nginx Proxy Manager) handles SSL termination
 - **Networking:** all services communicate over internal Docker networks; only the app port is exposed
 
 ---
