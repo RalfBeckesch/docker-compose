@@ -237,6 +237,24 @@ services:
       REDIS_HOST_PORT: 6379
     networks:
       - nextcloud_internal
+      
+      
+  collabora:
+    image: collabora/code:latest
+    container_name: ${INSTANCE_NAME}-collabora-code
+    restart: unless-stopped
+    cap_add:
+      - MKNOD
+    environment:
+      - aliasgroup1=${NEXTCLOUD_URL:-https://localhost}
+      - domain=${NEXTCLOUD_URL:-https://localhost}
+      - username=admin
+      - password=${COLLABORA_ADMIN_PASSWORD:-CHANGEME}
+      - extra_params=--o:ssl.enable=false --o:ssl.termination=true
+    ports:
+      - "127.0.0.1:9980:9980"
+    networks:
+      - nextcloudinternal
 
 # # =============================================================================
 # # VOLUMES
