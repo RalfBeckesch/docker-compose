@@ -45,7 +45,7 @@ High-performance Nextcloud setup based on the official Apache image.
 ```bash
 git clone https://github.com/RalfBeckesch/docker-compose.git
 cd docker-compose/<service>
-cp .env.example .env
+cp env-dist .env
 # edit .env and fill in your values
 chmod 600 .env
 docker compose up -d
