@@ -254,7 +254,7 @@ services:
     ports:
       - "127.0.0.1:9980:9980"
     networks:
-      - nextcloudinternal
+      - nextcloud_internal
 
 # # =============================================================================
 # # VOLUMES
