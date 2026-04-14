@@ -39,7 +39,7 @@ The webserver waits for `db` to pass its healthcheck before starting. Gotenberg 
 
 ## Configuration (`docker-compose.env`)
 
-The file `env-dist-2` is the configuration template. Variables marked **[CHANGE ON NEW INSTANCE]** must be set before first deployment.
+The file `env-dist` is the configuration template. Variables marked **[CHANGE ON NEW INSTANCE]** must be set before first deployment.
 
 ### Mandatory on every new instance
 
