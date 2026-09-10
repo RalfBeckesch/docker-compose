@@ -17,7 +17,7 @@
 # Prefix used in all "container_name" entries.
 # If left empty, Docker Compose falls back to "nextcloud".
 # INSTANCE_NAME=
-INSTANCE_NAME=nextcloud-apache
+INSTANCE_NAME=nextcloud-nc.mydomain.org
 
 # -----------------------------------------------------------------------------
 # PostgreSQL Database
