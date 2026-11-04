@@ -1,0 +1,114 @@
+# =============================================================================
+# Vikunja – Environment Distribution File
+# Copy this file to ".env" and fill in your values before starting the stack.
+#
+#   cp env-dist .env
+#   chmod 600 .env
+#
+# Every value marked CHANGEME must be replaced before the first start.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Compose / Project
+# -----------------------------------------------------------------------------
+
+# Prefix for all container names of this stack.
+COMPOSE_PROJECT_NAME=vikunja
+
+# -----------------------------------------------------------------------------
+# Docker Images
+# -----------------------------------------------------------------------------
+
+# Vikunja image tag. Use a released version, never "latest" or "unstable":
+# an unpinned tag pulls an arbitrary version on the next `docker compose pull`.
+# Releases: https://github.com/go-vikunja/vikunja/releases
+VIKUNJA_VERSION=2.7.1
+
+# PostgreSQL image tag.
+# Vikunja's CI tests PostgreSQL 18, so that is the version to pin here.
+# NOTE: postgres:18 keeps its data in /var/lib/postgresql/<major>/docker and
+# declares /var/lib/postgresql as its volume – which is why the mount in
+# docker-compose.yaml points there and not at /var/lib/postgresql/data
+# (the path used by postgres:16/17).
+POSTGRES_VERSION=18
+
+# -----------------------------------------------------------------------------
+# Network
+# -----------------------------------------------------------------------------
+
+# Address the Vikunja web UI is published on.
+#   127.0.0.1 → loopback only, intended to sit behind a reverse proxy (default)
+#   0.0.0.0   → reachable from the LAN
+# Restrict access with a firewall/VLAN if you bind to 0.0.0.0.
+BIND_ADDR=127.0.0.1
+
+# Host port mapped to the container's port 3456.
+HTTP_PORT=3456
+
+# -----------------------------------------------------------------------------
+# Storage
+# -----------------------------------------------------------------------------
+
+# Host path for attachments, avatars and other uploaded files.
+# Must be writable by VIKUNJA_UID – scripts/bootstrap.sh sets that up.
+VIKUNJA_FILES=./data/vikunja-files
+
+# Host path for the persistent PostgreSQL data files.
+# A missing or empty directory here is a hard error, not a silent fresh start.
+POSTGRES_DATA=./data/postgres
+
+# -----------------------------------------------------------------------------
+# Vikunja Application
+# -----------------------------------------------------------------------------
+
+# Public URL of your instance, exactly as reachable in the browser.
+# Must include the trailing slash and match BIND_ADDR / reverse proxy setup.
+# Required: CORS is enabled by default and rejects requests without it.
+VIKUNJA_PUBLIC_URL=http://localhost:3456/
+
+# Secret used to sign login tokens. Generate one:
+#   openssl rand -hex 32
+# Changing this value later invalidates all active sessions.
+VIKUNJA_SERVICE_SECRET=CHANGEME
+
+# Timezone for date handling and CalDAV.
+# Full list: https://en.wikipedia.org/wiki/List_of_tz_database_time_zone
+VIKUNJA_TIMEZONE=America/Winnipeg
+
+# Allow new user self-registration via the web interface.
+# Keep "true" for the initial setup, then set it to "false" once every account
+# exists and run `docker compose up -d` to apply it.
+VIKUNJA_ENABLE_REGISTRATION=true
+
+# Enable CORS handling. Leave true while VIKUNJA_PUBLIC_URL is set correctly.
+VIKUNJA_CORS_ENABLE=true
+
+# User/group the application process runs as inside the container, and the
+# owner the host directory VIKUNJA_FILES must have. Vikunja's official image
+# uses 1000. Adjust only if your host layout requires it.
+VIKUNJA_UID=1000
+VIKUNJA_GID=1000
+
+# -----------------------------------------------------------------------------
+# PostgreSQL Database
+# -----------------------------------------------------------------------------
+
+# Database name created on first startup.
+# Changing it on an existing instance points the app at a different database.
+POSTGRES_DB=vikunja
+
+# PostgreSQL credentials – used by both the db and the vikunja service.
+POSTGRES_USER=vikunja
+POSTGRES_PASSWORD=CHANGEME
+
+# -----------------------------------------------------------------------------
+# Backups
+# -----------------------------------------------------------------------------
+
+# Host path where scripts/backup.sh writes its timestamped backup sets
+# (and where scripts/upgrade.sh keeps its pre-upgrade safety nets).
+BACKUP_DIR=./backups
+
+# How many days a backup set is kept before scripts/backup.sh prunes it.
+# Override per run with: ./scripts/backup.sh --keep-days 30
+BACKUP_KEEP_DAYS=7

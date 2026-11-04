@@ -90,7 +90,7 @@ NEXTCLOUD_ADMIN_PASSWORD=CHANGEME
 #
 # Example for multiple domains:
 #   localhost cloud.example.com
-NEXTCLOUD_TRUSTED_DOMAINS=localhost nc.mycloud.org
+NEXTCLOUD_TRUSTED_DOMAINS="localhost nc.mycloud.org"
 NEXTCLOUD_URL=https://nc.mycloud.org
 
 # HTTP port exposed by the container.
@@ -131,3 +131,15 @@ REDIS_VERSION=7-alpine
 # Replace with a strong password before first startup.
 # REDIS_PASSWORD=ENTER_REDIS_PASSWORD
 REDIS_PASSWORD=CHANGEME
+
+# -----------------------------------------------------------------------------
+# Backups
+# -----------------------------------------------------------------------------
+
+# Host path where scripts/backup.sh writes its timestamped backup sets
+# (and where scripts/upgrade.sh keeps its pre-upgrade safety nets).
+BACKUP_DIR=./backups
+
+# How many days a backup set is kept before scripts/backup.sh prunes it.
+# Override per run with: ./scripts/backup.sh --keep-days 30
+BACKUP_KEEP_DAYS=7

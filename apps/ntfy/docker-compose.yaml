@@ -1,6 +1,6 @@
 services:
   ntfy:
-    image: binwiederhier/ntfy:v2.19
+    image: binwiederhier/ntfy:${NTFY_VERSION:-v2.19}
     container_name: ntfy
     command:
       - serve
@@ -25,8 +25,8 @@ services:
       NTFY_CACHE_DURATION: ${NTFY_CACHE_DURATION:-12h}
     user: ${NTFY_UID:-1000}:${NTFY_GID:-1000} # optional: replace with your own user/group or uid/gid
     volumes:
-      - ${NTFY_CACHE_DIR:-./ntfy-cache}:/var/cache/ntfy
-      - ${NTFY_CONFIG_DIR:-./ntfy-config}:/etc/ntfy
+      - ${NTFY_CACHE_DIR:-./data/ntfy-cache}:/var/cache/ntfy
+      - ${NTFY_CONFIG_DIR:-./data/ntfy-config}:/etc/ntfy
     ports:
       - ${NTFY_EXPOSE_PORT:-8080}:80
     healthcheck: # optional: remember to adapt the host:port to your environment
@@ -44,13 +44,13 @@ services:
     networks:
       - ntfy-net
   db:
-    image: postgres:16-alpine
+    image: postgres:${POSTGRES_VERSION:-16-alpine}
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-ntfy}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       POSTGRES_DB: ${POSTGRES_DB:-ntfy_db}
     volumes:
-      - ${POSTGRES_DATA_DIR:-./postgres}:/var/lib/postgresql/data
+      - ${POSTGRES_DATA_DIR:-./data/postgres}:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]

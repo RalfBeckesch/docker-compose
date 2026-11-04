@@ -28,7 +28,7 @@ EXPORT_PORT=127.0.0.1:8080
 # -----------------------------------------------------------------------------
 
 # Host path for persistent Vaultwarden data (SQLite database, attachments, icons).
-DATA=./vaultwarden-data
+DATA=./data/vaultwarden
 
 # -----------------------------------------------------------------------------
 # General Settings
@@ -103,3 +103,16 @@ SMTP_PASSWORD=your-smtp-password-here
 #
 # ADMIN_TOKEN='$argon2id$v=19$m=65540,t=3,p=4$.............................'
 ADMIN_TOKEN=''
+
+# -----------------------------------------------------------------------------
+# Backups
+# -----------------------------------------------------------------------------
+
+# Host path where scripts/backup.sh writes its timestamped backup sets.
+# Keep this OUTSIDE the data directory and, ideally, on separate storage:
+# a backup next to the original dies with the disk.
+BACKUP_DIR=./backups
+
+# How many days a backup set is kept before scripts/backup.sh prunes it.
+# Override per run with: ./scripts/backup.sh --keep-days 30
+BACKUP_KEEP_DAYS=7

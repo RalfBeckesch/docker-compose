@@ -1,1 +1,16 @@
 .env
+_Hermes-Ausgabe
+_hermes-Ausgabe
+
+# paperless-ngx keeps its secrets in docker-compose.env instead of .env
+docker-compose.env
+
+# Runtime data of every stack – the bind mounts live under ./data
+data/
+
+# Timestamped backup sets written by apps/<service>/scripts/backup.sh
+backups/
+
+# Upgrade artefacts: backups contain .env copies with secrets
+backup/
+ref/

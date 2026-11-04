@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Fake curl: answers the registry tag check with 200 and every health probe
+# with success. Behaviour is steered purely by the arguments the scripts use.
+set -u
+
+for argument in "$@"; do
+  case "${argument}" in
+    # Health checks that ask for a status code (-w '%{http_code}') get 200.
+    *'%{http_code}'*) printf '200\n'; exit 0 ;;
+    *hub.docker.com*) echo "200"; exit 0 ;;
+    *"/v1/health"*)   echo '{"healthy":true}'; exit 0 ;;
+  esac
+done
+
+# Everything else (wait loops, version endpoint) is a plain success.
+exit 0

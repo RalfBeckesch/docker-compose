@@ -1,0 +1,105 @@
+# =============================================================================
+# Vikunja – Docker Compose Stack
+# Services: Vikunja (API + web UI in one binary), PostgreSQL 18
+#
+# Supported architectures: amd64, arm64
+#
+# First-time setup:
+#   1. cp env-dist .env && chmod 600 .env   → fill in every CHANGEME value
+#   2. ./scripts/bootstrap.sh               → creates data dirs, pulls, starts
+#   3. Register your account, then set VIKUNJA_ENABLE_REGISTRATION=false
+#
+# Update: ./scripts/upgrade.sh <version>
+#         (`docker compose pull && docker compose up -d` works too, but skips
+#          the verified backup and the version check)
+# Docs:   https://vikunja.io/docs/
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Vikunja – task management: REST API and web frontend in a single container
+  #
+  # Runs as UID 1000 inside the container and does NOT take ownership of the
+  # files directory itself. That directory must be writable by that UID on the
+  # host, otherwise uploads and avatars fail with "permission denied".
+  # scripts/bootstrap.sh applies the chown; a plain `docker compose up -d`
+  # does not.
+  # ---------------------------------------------------------------------------
+  vikunja:
+    image: vikunja/vikunja:${VIKUNJA_VERSION:?VIKUNJA_VERSION must be set in .env}
+    container_name: ${COMPOSE_PROJECT_NAME:-vikunja}
+    restart: unless-stopped
+    # Explicit instead of relying on the image default (1000): the files
+    # directory on the host must belong to exactly this UID/GID. Under rootless
+    # Docker set this to "0:0" – file permission checks then happen at kernel
+    # level with a different UID mapping and uploads fail otherwise.
+    user: "${VIKUNJA_UID:-1000}:${VIKUNJA_GID:-1000}"
+    ports:
+      # <bind_address>:<host_port> -> container port 3456.
+      # Loopback by default: intended to sit behind a reverse proxy.
+      # For direct LAN access set BIND_ADDR=0.0.0.0 in .env.
+      - "${BIND_ADDR:-127.0.0.1}:${HTTP_PORT:-3456}:3456"
+    volumes:
+      # Attachments, avatars and other uploaded files.
+      - ${VIKUNJA_FILES:?VIKUNJA_FILES must be set in .env}:/app/vikunja/files
+    environment:
+      # Public URL exactly as typed in the browser, trailing slash included.
+      # Required: CORS is enabled by default and needs this value. A wrong
+      # value shows up as a frontend that receives no API responses.
+      VIKUNJA_SERVICE_PUBLICURL: ${VIKUNJA_PUBLIC_URL:?VIKUNJA_PUBLIC_URL must be set in .env}
+      # Signs login tokens. Changing it invalidates all active sessions.
+      VIKUNJA_SERVICE_SECRET: ${VIKUNJA_SERVICE_SECRET:?VIKUNJA_SERVICE_SECRET must be set in .env}
+      # Drives date handling and CalDAV. The image default would be GMT.
+      VIKUNJA_SERVICE_TIMEZONE: ${VIKUNJA_TIMEZONE:-UTC}
+      # Keep this true until all accounts exist, then set it to false.
+      VIKUNJA_SERVICE_ENABLEREGISTRATION: ${VIKUNJA_ENABLE_REGISTRATION:-false}
+      VIKUNJA_CORS_ENABLE: ${VIKUNJA_CORS_ENABLE:-true}
+      # Database wiring – internal service names are fixed by the network below.
+      VIKUNJA_DATABASE_TYPE: postgres
+      VIKUNJA_DATABASE_HOST: db
+      VIKUNJA_DATABASE_DATABASE: ${POSTGRES_DB:?POSTGRES_DB must be set in .env}
+      VIKUNJA_DATABASE_USER: ${POSTGRES_USER:?POSTGRES_USER must be set in .env}
+      VIKUNJA_DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+    depends_on:
+      db:
+        condition: service_healthy   # wait for the DB healthcheck before starting
+    # No active healthcheck on purpose: the upstream image ships none, and an
+    # invented one can block the start through depends_on: service_healthy.
+    # scripts/bootstrap.sh verifies readiness with a wait loop instead.
+    # If you want one anyway, uncomment it AND test it before relying on it:
+    # healthcheck:
+    #   test: ["CMD-SHELL", "wget -q --tries=1 -O /dev/null http://localhost:3456/api/v1/info || exit 1"]
+    #   interval: 30s
+    #   timeout: 5s
+    #   retries: 3
+    #   start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL 18 – persistent database
+  #
+  # PGDATA path: postgres:18 uses /var/lib/postgresql/18/docker and declares
+  # /var/lib/postgresql as its volume, so the mount point is the parent
+  # directory. postgres:16/17 used /var/lib/postgresql/data instead – mounting
+  # that older path here would leave the real data outside the volume and lose
+  # it on the next container recreation. Do NOT set PGDATA yourself: the image
+  # default carries the major version and follows it across a major upgrade,
+  # while a pinned path would not.
+  # ---------------------------------------------------------------------------
+  db:
+    image: postgres:${POSTGRES_VERSION:?POSTGRES_VERSION must be set in .env}
+    container_name: ${COMPOSE_PROJECT_NAME:-vikunja}-db
+    restart: unless-stopped
+    volumes:
+      - ${POSTGRES_DATA:?POSTGRES_DATA must be set in .env}:/var/lib/postgresql
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB must be set in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+    healthcheck:
+      # $$ escaping prevents Compose from expanding the variables at parse time
+      test: ["CMD-SHELL", "pg_isready -h localhost -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 15s

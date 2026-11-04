@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# =============================================================================
+# sqlite3 – minimal stand-in for the backup tests
+# =============================================================================
+# Only used by the test that exercises the vaultwarden online-backup path; it is
+# deliberately kept out of stub-bin/ so that the default runs see "no sqlite3 on
+# this host" and take the stop-and-copy fallback instead.
+#
+# Understands exactly the two calls scripts/backup.sh makes:
+#   sqlite3 <db> ".backup '<target>'"
+#   sqlite3 <target> 'PRAGMA integrity_check;'
+# =============================================================================
+set -euo pipefail
+
+database="$1"
+statement="$2"
+
+if [[ ! -f "${database}" ]]; then
+  printf 'Error: unable to open database file\n' >&2
+  exit 1
+fi
+
+case "${statement}" in
+  ".backup "*)
+    target="${statement#.backup }"
+    target="${target//\'/}"
+    # A real SQLite file starts with this 16-byte magic.
+    printf 'SQLite format 3\0stubbed-online-backup-payload' > "${target}"
+    ;;
+  "PRAGMA integrity_check;"|"PRAGMA integrity_check")
+    printf 'ok\n'
+    ;;
+  *)
+    printf 'ok\n'
+    ;;
+esac
+
+exit 0

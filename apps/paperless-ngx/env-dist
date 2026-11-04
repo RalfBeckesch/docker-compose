@@ -10,6 +10,19 @@
 ###############################################################################
 
 # =============================================================================
+# Docker Images
+# Every image tag of this stack lives here, so scripts/upgrade.sh bumps exactly
+# one variable per component instead of editing the Compose file.
+# =============================================================================
+PAPERLESS_VERSION=2.20
+POSTGRES_VERSION=16
+REDIS_VERSION=7
+GOTENBERG_VERSION=8.25
+# Tika publishes no meaningful release tags upstream (only "latest"/"full"),
+# so this one cannot be pinned usefully – watch it manually.
+TIKA_VERSION=latest
+
+# =============================================================================
 # Compose / Project
 # =============================================================================
 COMPOSE_PROJECT_NAME=paperless-xyz
@@ -29,7 +42,9 @@ PAPERLESS_URL=https://dms-xyz.mydomain.org
 # =============================================================================
 POSTGRES_DB=paperless
 POSTGRES_USER=paperless
-POSTGRES_PASSWORD=SECRET   # [CHANGE ON NEW INSTANCE] – use a strong password!
+# POSTGRES_PASSWORD=SECRET
+# [CHANGE ON NEW INSTANCE] – use a strong password!
+POSTGRES_PASSWORD=SECRET
 
 # =============================================================================
 # Security – Secret Key
@@ -77,7 +92,7 @@ PAPERLESS_OCR_LANGUAGE=deu
 # The container ships with: English, German, Italian, Spanish, French by default.
 # Available packages: https://packages.debian.org/search?keywords=tesseract-ocr-
 #PAPERLESS_OCR_LANGUAGES=tur ces
-PAPERLESS_OCR_LANGUAGES=eng fra frk kan ltz nld ron rus
+PAPERLESS_OCR_LANGUAGES="eng fra frk kan ltz nld ron rus"
 
 # =============================================================================
 # Data Directories
@@ -90,6 +105,13 @@ PAPERLESS_CONSUMPTION_DIR=./data/ppl-consume
 PAPERLESS_EXPORT_DIR=./data/ppl-export
 PAPERLESS_DATA_DIR=./data/ppl-data
 PAPERLESS_BACKUP_DIR=./data/ppl-backup
+
+# Host path for the PostgreSQL data directory.
+# Mounted into the db service; the Compose file refuses to start if it is empty.
+POSTGRES_DATA_DIR=./data/pgdata
+
+# Host path for the Redis (broker) data directory.
+REDIS_DATA_DIR=./data/redisdata
 
 # =============================================================================
 # Consumer – File Watcher
@@ -115,3 +137,15 @@ PAPERLESS_EMAIL_PARSE_DEFAULT_LAYOUT=2
 # In this line, emails are polled every 2 minutes
 # =============================================================================
 PAPERLESS_EMAIL_TASK_CRON="*/2 * * * *"
+
+# =============================================================================
+# Backups
+# =============================================================================
+
+# Host path where scripts/backup.sh writes its timestamped backup sets
+# (and where scripts/upgrade.sh keeps its pre-upgrade safety nets).
+BACKUP_DIR=./backups
+
+# How many days a backup set is kept before scripts/backup.sh prunes it.
+# Override per run with: ./scripts/backup.sh --keep-days 30
+BACKUP_KEEP_DAYS=7

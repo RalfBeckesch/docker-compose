@@ -1,0 +1,60 @@
+# =============================================================================
+# SearXNG – environment template.  Copy to .env and edit.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Versions (pinned – never "latest")
+# -----------------------------------------------------------------------------
+# SearXNG publishes dated rollup tags. Pick one from
+# https://hub.docker.com/r/searxng/searxng/tags and pin it here.
+SEARXNG_VERSION=2026.11.2-cccbc9e15
+# Upstream uses the 9-alpine branch of Valkey for the limiter.
+VALKEY_VERSION=9-alpine
+
+# -----------------------------------------------------------------------------
+# Network
+# -----------------------------------------------------------------------------
+# Host port. Bound to 127.0.0.1 – put a reverse proxy in front for public access.
+SEARXNG_PORT=42180
+
+# Public URL of this instance. Used for links, the OpenSearch descriptor and
+# the limiter's "public instance" logic. Include the scheme and trailing slash.
+SEARXNG_BASE_URL=http://localhost:42180/
+
+# -----------------------------------------------------------------------------
+# Security
+# -----------------------------------------------------------------------------
+# Secret used for cookies and CSRF tokens. Generate once with:
+#   openssl rand -hex 32
+# Changing it invalidates existing sessions and preferences.
+SEARXNG_SECRET=CHANGEME
+
+# Bot protection via Valkey. Strongly recommended for anything reachable from
+# the internet; costs one extra container.
+SEARXNG_LIMITER=true
+
+# Set to true if the instance is reachable by the public. Affects the limiter
+# and the "public instance" warning in the UI.
+SEARXNG_PUBLIC_INSTANCE=false
+
+# Image proxy for result thumbnails (SEARXNG_IMAGE_PROXY).
+SEARXNG_IMAGE_PROXY=false
+
+# -----------------------------------------------------------------------------
+# Data paths (host side, relative to this directory)
+# -----------------------------------------------------------------------------
+# settings.yml, limiter.toml, favicons.toml – the actual state of the instance.
+SEARXNG_CONFIG=./data/searxng/config
+# faviconcache.db and similar caches. Recreated automatically, but keeping it
+# avoids re-fetching every favicon after a restart.
+SEARXNG_DATA=./data/searxng/cache
+# Valkey RDB – rate-limit counters and cache. Not state worth restoring.
+VALKEY_DATA=./data/searxng/valkey
+
+# -----------------------------------------------------------------------------
+# Backups
+# -----------------------------------------------------------------------------
+# How many days a backup set is kept before scripts/backup.sh prunes it.
+# Override per run with: ./scripts/backup.sh --keep-days 30
+BACKUP_DIR=./backups
+BACKUP_KEEP_DAYS=7

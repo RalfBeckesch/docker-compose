@@ -1,0 +1,247 @@
+#!/usr/bin/env python3
+"""Fake docker CLI for testing the stack scripts without a Docker daemon.
+
+Understands exactly the subset the scripts use:
+  docker info / docker inspect
+  docker compose [-f FILE] [--env-file E] config|pull|up|down|start|stop|restart
+  docker compose [-f FILE] [--env-file E] ps|logs|exec
+
+`compose config` interpolates ${VAR}, ${VAR:-default} and ${VAR:?message}
+from the env file, so the resolved-image assertions in the scripts are
+exercised for real.
+
+`compose exec` handles the three commands the scripts rely on to produce
+output on the HOST:
+  * pg_dump            -> a plausible PostgreSQL dump on stdout
+  * document_exporter  -> writes manifest.json into the export bind mount
+  * vikunja dump       -> writes a real ZIP into the files bind mount
+Both write through the compose volume mapping, so the scripts' verification
+steps run against files that actually exist.
+"""
+import os
+import re
+import sys
+import zipfile
+
+VAR = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::([-?])([^}]*))?\}")
+# A bind mount spec: <host>:/<container>[:mode]. The host may contain a ${VAR:?msg}
+# guard, so a plain split(":") would cut inside the guard – match the container
+# path at the end instead and treat everything before it as the host part.
+VOLUME = re.compile(r"^(?P<host>.*?):(?P<container>/[^:]*?)(?::(?P<mode>[A-Za-z,]+))?$")
+
+
+def env_path(args, compose_file):
+    for index, arg in enumerate(args):
+        if arg == "--env-file":
+            return args[index + 1]
+    candidate = os.path.join(os.path.dirname(compose_file), ".env")
+    return candidate
+
+
+def read_env(path):
+    values = {}
+    if not os.path.exists(path):
+        return values
+    with open(path, encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                value = value[1:-1]
+            values[key.strip()] = value
+    return values
+
+
+def interpolate(text, values):
+    def replace(match):
+        name, operator, default = match.group(1), match.group(2), match.group(3)
+        if name in values:
+            return values[name]
+        if operator == "-":
+            return default
+        if operator == "?":
+            return ""
+        return ""
+
+    return VAR.sub(replace, text)
+
+
+def volume_host_path(compose_file, container_path, values):
+    """Resolve a bind mount to its host path, the way compose would."""
+    with open(compose_file, encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            stripped = line.strip()
+            if not stripped.startswith("- ") or ":" not in stripped:
+                continue
+            spec = stripped[2:].split("#", 1)[0].strip().rstrip(",")
+            match = VOLUME.match(spec)
+            if not match:
+                continue
+            host, container = match.group("host"), match.group("container")
+            container = interpolate(container, values)
+            if container.rstrip("/") != container_path.rstrip("/"):
+                continue
+            host = interpolate(host, values)
+            if "{:?" in host or "${" in host:
+                continue
+            return host
+    return None
+
+
+def cmd_config(compose_file, env_file):
+    values = read_env(env_file)
+    with open(compose_file, encoding="utf-8", errors="replace") as handle:
+        content = handle.read()
+    print("services:")
+    for line in content.splitlines():
+        if re.match(r"\s*image:\s*\S", line) and not line.lstrip().startswith("#"):
+            image = line.split("image:", 1)[1].strip()
+            print("    image: " + interpolate(image, values))
+    print("networks:")
+    print("    default:")
+
+
+def pg_dump_output():
+    print("--")
+    print("-- PostgreSQL database dump")
+    print("--")
+    print("-- Dumped from database version 16.4")
+    for index in range(60):
+        print(f"INSERT INTO public.entries VALUES ({index}, 'payload-{index}');")
+    print("-- PostgreSQL database dump complete")
+
+
+def write_document_export(compose_file, values, target):
+    host = volume_host_path(compose_file, target, values)
+    if not host:
+        sys.stderr.write(f"document_exporter: no bind mount for {target}\n")
+        return 1
+    os.makedirs(host, exist_ok=True)
+    with open(os.path.join(host, "manifest.json"), "w", encoding="utf-8") as handle:
+        handle.write('{"documents": [{"id": 1, "title": "fake document"}]}\n')
+    print(f"Exporting documents to {target} …")
+    print("Export of 1 documents done.")
+    return 0
+
+
+def write_vikunja_dump(compose_file, values, container_path, filename):
+    host = volume_host_path(compose_file, container_path, values)
+    if not host:
+        sys.stderr.write(f"vikunja dump: no bind mount for {container_path}\n")
+        return 1
+    os.makedirs(host, exist_ok=True)
+    target = os.path.join(host, filename)
+    # Real dumps are megabytes; keep this big enough that the script's
+    # plausibility check on the unpacked size is exercised, not bypassed.
+    rows = "\n".join(f"INSERT INTO tasks VALUES ({index}, 'task-{index}');"
+                     for index in range(500))
+    with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("config.yml", "service:\n  jwtttl: 259200\n")
+        archive.writestr("version", "2.7.1\n")
+        archive.writestr("db/vikunja.sqlite", "SQLite format 3\x00" + rows)
+    print("dumped everything into " + target)
+    return 0
+
+
+def cmd_exec(compose_file, env_file, command):
+    values = read_env(env_file)
+    if not command:
+        return 0
+
+    if command[0] == "pg_dump":
+        pg_dump_output()
+        return 0
+    if command[0] == "psql":
+        return 0
+    if command[0] == "document_exporter":
+        target = command[1] if len(command) > 1 else "/usr/src/paperless/export"
+        return write_document_export(compose_file, values, target)
+    if command[-1] == "dump" or "dump" in command:
+        # vikunja dump -p <path> -f <name>
+        container_path = "/app/vikunja/files"
+        filename = "vikunja-dump.zip"
+        if "-p" in command:
+            container_path = command[command.index("-p") + 1]
+        if "--path" in command:
+            container_path = command[command.index("--path") + 1]
+        if "-f" in command:
+            filename = command[command.index("-f") + 1]
+        if "--filename" in command:
+            filename = command[command.index("--filename") + 1]
+        return write_vikunja_dump(compose_file, values, container_path, filename)
+    if "status" in command:
+        print("  - installed: true")
+        print("  - version: 32.0.1.1")
+        print("  - versionstring: 32.0.1")
+        print("  - maintenance: false")
+        return 0
+    if command[0] == "sqlite3":
+        return 0
+    return 0
+
+
+def main():
+    args = sys.argv[1:]
+    if not args:
+        return 0
+    if args[0] == "info":
+        return 0
+    if args[0] == "inspect":
+        print("/fake-container -> vaultwarden/server:1.34.0")
+        return 0
+    if args[0] == "ps":
+        print("fake-container-id")
+        return 0
+    if args[0] != "compose":
+        return 0
+
+    rest = args[1:]
+    if rest and rest[0] == "version":
+        print("Docker Compose version v2.29.0")
+        return 0
+
+    compose_file = "docker-compose.yaml"
+    index = 0
+    while index < len(rest) and rest[index].startswith("-"):
+        if rest[index] in ("-f", "--file", "--env-file"):
+            if rest[index] == "-f" or rest[index] == "--file":
+                compose_file = rest[index + 1]
+            index += 2
+        else:
+            index += 1
+    rest = rest[index:]
+    if not rest:
+        return 0
+
+    env_file = env_path(args, compose_file)
+    command, parameters = rest[0], rest[1:]
+
+    if command == "config":
+        cmd_config(compose_file, env_file)
+        return 0
+    if command in ("pull", "up", "down", "start", "stop", "restart"):
+        return 0
+    if command == "ps":
+        if "-q" in parameters:
+            print("fake-container-id")
+            return 0
+        print("NAME   IMAGE   STATUS")
+        return 0
+    if command == "logs":
+        print("fake log line")
+        return 0
+    if command == "exec":
+        filtered = [arg for arg in parameters if arg not in ("-T", "-u", "www-data", "-d", "-it")]
+        command_args = filtered[1:] if filtered else []
+        if command_args and command_args[0] == "php" and len(command_args) > 1 \
+                and command_args[1] == "occ":
+            command_args = [argument for argument in command_args[1:] if argument != "occ"]
+        return cmd_exec(compose_file, env_file, command_args)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

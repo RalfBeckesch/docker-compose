@@ -46,10 +46,10 @@ The file `env-dist` is the configuration template. Copy it to `.env` before depl
 | `TZ` | `Europe/Berlin` | Container timezone — affects scheduled tasks and timestamps |
 | `LOG_LEVEL` | `INFO` | Log verbosity: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
 | `ALLOW_SIGNUP` | `false` | Allow self-registration — keep `false` and invite users via admin panel |
-| `MEALIE_DATA` | `./mealie-data` | Host path for persistent Mealie data (recipes, images, backups) |
+| `MEALIE_DATA` | `./data/mealie` | Host path for persistent Mealie data (recipes, images, backups) |
 | `UID` | `1000` | User ID the container process runs as — match the host directory owner |
 | `GID` | `1000` | Group ID the container process runs as — match the host directory owner |
-| `POSTGRES_DATA` | `./postgres-data` | Host path for persistent PostgreSQL data files |
+| `POSTGRES_DATA` | `./data/postgres` | Host path for persistent PostgreSQL data files |
 | `POSTGRES_DB` | `mealie` | Database name created on first startup |
 | `POSTGRES_USER` | `mealie` | PostgreSQL username — shared by both services |
 | `POSTGRES_PASSWORD` | _(required)_ | PostgreSQL password — shared by both services |
@@ -69,9 +69,52 @@ All persistent data is stored on the host under the paths defined in `.env`:
 
 | Path | Service | Purpose |
 |---|---|---|
-| `./mealie-data/` | `mealie` | Recipes, images, backups, and application configuration |
-| `./postgres-data/` | `postgres` | PostgreSQL database files |
+| `./data/mealie/` | `mealie` | Recipes, images, backups, and application configuration |
+| `./data/postgres/` | `postgres` | PostgreSQL database files |
 
 > **Backup:** Regularly back up both data directories. The most critical directory is
-> `./mealie-data/` which contains all recipe data. Mealie also provides a built-in
+> `./data/mealie/` which contains all recipe data. Mealie also provides a built-in
 > backup and restore feature accessible via the admin panel under *Site Settings → Backups*.
+
+## Scripts
+
+| File | Purpose |
+|---|---|
+| `scripts/bootstrap.sh` | First-time setup: `.env` creation with a generated database password, data directories, ownership, pull, start, health check |
+| `scripts/upgrade.sh` | Version bump with a verified backup, start, health check and rollback instructions |
+| `scripts/backup.sh` | Database dump plus data directory, with verification, retention and restore instructions |
+
+Stack update in short:
+
+```bash
+cp env-dist .env && chmod 600 .env   # once
+./scripts/bootstrap.sh               # once
+./scripts/upgrade.sh v3.14.0         # later, per release
+```
+
+All image tags live in `.env` (`MEALIE_VERSION`, `POSTGRES_VERSION`), so an upgrade
+changes one value instead of editing the Compose file. The script writes a
+verifiable database dump plus the data directory into `backup/<timestamp>/` and
+refuses to continue if either is not intact.
+
+## Migration Notes
+
+### 2026-11-04 — data directories moved under `./data/`
+
+The persistent directories used to be `./mealie-data` and `./postgres-data`. They now live
+under `./data/` (`./data/mealie`, `./data/postgres`), matching every other stack in this repo
+and making a single `.gitignore` rule (`data/`) sufficient.
+
+**This matters for an instance that is already running:** the paths in the Compose file
+changed, so Docker will create *empty* directories at the new locations on the next start,
+and the instance will look wiped. Move the existing data before starting:
+
+```bash
+mkdir -p data
+mv mealie-data data/mealie
+mv postgres-data data/postgres
+```
+
+Then set `MEALIE_DATA=./data/mealie` and `POSTGRES_DATA=./data/postgres` in `.env`.
+Replacing `./mealie-data` with the new path in `.env` while leaving the old directory on disk
+is a supported alternative — the variables are the source of truth, the defaults are not.

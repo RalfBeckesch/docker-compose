@@ -20,20 +20,20 @@ services:
   # Redis – Message broker for asynchronous task queue processing
   # ---------------------------------------------------------------------------
   broker:
-    image: docker.io/library/redis:7
+    image: docker.io/library/redis:${REDIS_VERSION:-7}
     restart: unless-stopped
     volumes:
-      - ./data/redisdata:/data
+      - ${REDIS_DATA_DIR:?REDIS_DATA_DIR must not be empty}:/data
 
   # ---------------------------------------------------------------------------
   # PostgreSQL – Primary relational database for Paperless-ngx
   # Credentials are sourced from docker-compose.env
   # ---------------------------------------------------------------------------
   db:
-    image: docker.io/library/postgres:16
+    image: docker.io/library/postgres:${POSTGRES_VERSION:-16}
     restart: unless-stopped
     volumes:
-      - ./data/pgdata:/var/lib/postgresql/data
+      - ${POSTGRES_DATA_DIR:?POSTGRES_DATA_DIR must not be empty}:/var/lib/postgresql/data
 #    env_file: docker-compose.env
     environment:
       POSTGRES_DB:       ${POSTGRES_DB}        # .env
@@ -58,7 +58,7 @@ services:
   #   Bound to loopback only – intended to be exposed via a reverse proxy.
   # ---------------------------------------------------------------------------
   webserver:
-    image: ghcr.io/paperless-ngx/paperless-ngx:2.20
+    image: ghcr.io/paperless-ngx/paperless-ngx:${PAPERLESS_VERSION:-2.20}
     # Available image tags: https://hub.docker.com/r/paperlessngx/paperless-ngx/tags
     restart: unless-stopped
     depends_on:
@@ -109,7 +109,7 @@ services:
   # Used specifically for .eml file conversion (no external content).
   # ---------------------------------------------------------------------------
   gotenberg:
-    image: docker.io/gotenberg/gotenberg:8.25
+    image: docker.io/gotenberg/gotenberg:${GOTENBERG_VERSION:-8.25}
     restart: unless-stopped
     env_file: docker-compose.env
     command:
@@ -121,7 +121,7 @@ services:
   # Apache Tika – Extracts text from Office documents for OCR processing
   # ---------------------------------------------------------------------------
   tika:
-    image: docker.io/apache/tika:latest
+    image: docker.io/apache/tika:${TIKA_VERSION:-latest}
     env_file: docker-compose.env
     restart: unless-stopped
 

@@ -1,0 +1,59 @@
+# =============================================================================
+# SearXNG – self-hosted meta search engine
+# =============================================================================
+# Two services: the application and a Valkey instance for the limiter / cache.
+# All state lives in bind mounts under ./data/searxng/ (see env-dist).
+# =============================================================================
+name: searxng
+
+services:
+  searxng:
+    image: docker.io/searxng/searxng:${SEARXNG_VERSION:?SEARXNG_VERSION must be set in .env}
+    container_name: searxng-core
+    restart: unless-stopped
+    depends_on:
+      valkey:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${SEARXNG_PORT:-42180}:8080"
+    volumes:
+      - ${SEARXNG_CONFIG:?SEARXNG_CONFIG must be set in .env}:/etc/searxng
+      - ${SEARXNG_DATA:?SEARXNG_DATA must be set in .env}:/var/cache/searxng
+    environment:
+      SEARXNG_BASE_URL: ${SEARXNG_BASE_URL:-http://localhost:42180/}
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?SEARXNG_SECRET must be set in .env}
+      SEARXNG_VALKEY_URL: valkey://valkey:6379/0
+      SEARXNG_LIMITER: ${SEARXNG_LIMITER:-true}
+      SEARXNG_PUBLIC_INSTANCE: ${SEARXNG_PUBLIC_INSTANCE:-false}
+      SEARXNG_IMAGE_PROXY: ${SEARXNG_IMAGE_PROXY:-false}
+    healthcheck:
+      # The image is Alpine-based, so wget from busybox is always present.
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1m"
+        max-file: "1"
+
+  valkey:
+    image: docker.io/valkey/valkey:${VALKEY_VERSION:-9-alpine}
+    container_name: searxng-valkey
+    restart: unless-stopped
+    command: valkey-server --save 300 1 --save 60 1000 --loglevel warning
+    volumes:
+      - ${VALKEY_DATA:?VALKEY_DATA must be set in .env}:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1m"
+        max-file: "1"

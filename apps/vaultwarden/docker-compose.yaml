@@ -1,4 +1,4 @@
-# docker-compose.yml
+# docker-compose.yaml
 version: '3'
 
 services:
@@ -9,7 +9,7 @@ services:
     ports:
       - ${EXPORT_PORT:-8080}:80
     volumes:
-      - ${DATA:-./vaultwarden-data}:/data
+      - ${DATA:-./data/vaultwarden}:/data
     environment:
       ADMIN_TOKEN: ${ADMIN_TOKEN:?ADMIN_TOKEN must not be empty}
       WEBSOCKET_ENABLED: ${WEBSOCKET_ENABLED:-true}

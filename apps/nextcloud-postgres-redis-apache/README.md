@@ -73,6 +73,37 @@ The file `env-dist` is the configuration template. Copy it to `.env` before depl
 > ⚠️ **Keep your `.env` out of version control** — add it to `.gitignore` since it contains
 > database credentials, admin credentials, and the Redis password.
 
+## Scripts
+
+| File | Purpose |
+|---|---|
+| `scripts/upgrade.sh` | Version bump with a verified backup, `occ upgrade` in maintenance mode, verification and rollback instructions |
+| `scripts/backup.sh` | Consistent backup the way the admin manual prescribes: maintenance mode on, `pg_dump`, archive the data directories, maintenance mode off again |
+
+Backups: `./scripts/backup.sh` captures database and files at the same moment and
+guarantees the maintenance mode is switched off again even when the run fails. Sets
+land in `$BACKUP_DIR` (default `./backups`) and are pruned after `BACKUP_KEEP_DAYS`.
+Use `--skip-app-data` on large instances — without custom apps that directory is
+just a copy of the image. Verify at least once that the restore it prints works.
+
+Nextcloud cannot simply be pulled and restarted: the database is migrated by `occ
+upgrade`, which has to run in maintenance mode after the new code is in place.
+The script does that in the right order and refuses to continue unless the dump is
+verifiable.
+
+All image tags live in `.env` (`NEXTCLOUD_VERSION`, `POSTGRES_VERSION`,
+`REDIS_VERSION`), so an upgrade changes one value instead of editing the Compose file:
+
+```bash
+./scripts/upgrade.sh 32-apache          # asks before a major jump
+./scripts/upgrade.sh 32-apache --yes    # non-interactive
+```
+
+The backup lands in `backup/<timestamp>/` (database dump, `.env`, and all four data
+directories). `NEXTCLOUD_DATA` can be large — make sure there is room, or back it up
+separately and exclude it from the archive. If a run dies midway, the script tells you
+how to switch the maintenance mode off again.
+
 ## Runtime Files
 
 The stack uses additional local configuration files mounted into the containers:

@@ -62,3 +62,18 @@ All persistent data is stored on the host under `./data/` by default:
 | `./data/pipeline` | Batch processing pipeline definitions |
 
 > **OCR languages:** The `tessdata_trainingData` volume is required for any language beyond the built-in default. Additional language packs must be placed here manually or pre-downloaded into the container.
+
+## Scripts
+
+| File | Purpose |
+|---|---|
+| `scripts/backup.sh` | Configuration, built-in database and keystore — archived while the container is stopped for a consistent copy |
+
+This stack has no bootstrap or upgrade script on purpose: without a database,
+`docker compose pull && docker compose up -d` is the complete update. A backup is
+a different matter, because `${extraConfigs}` holds settings.yml, the keystore and
+the built-in database, and that database is written by the running process — so
+`./scripts/backup.sh` stops the container for a few seconds, archives the state and
+starts it again (also when the run fails). Logs and the OCR language data are left
+out: both can be recreated. Sets land in `$BACKUP_DIR` (default `./backups`) and
+are pruned after `BACKUP_KEEP_DAYS`.

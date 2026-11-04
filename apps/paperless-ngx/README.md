@@ -62,6 +62,40 @@ The file `env-dist` is the configuration template. Variables marked **[CHANGE ON
 | `PAPERLESS_EMAIL_TASK_CRON` | `*/2 * * * *` | Email ingestion schedule |
 | `USERMAP_UID` / `USERMAP_GID` | `1000` | Host user/group for file permission mapping |
 | `PAPERLESS_EXPORT_PORT` | `127.0.0.1:18182` | Host port binding (loopback only — use a reverse proxy) |
+| `POSTGRES_DATA_DIR` | `./data/pgdata` | Host path for the PostgreSQL data directory |
+| `REDIS_DATA_DIR` | `./data/redisdata` | Host path for the Redis (broker) data directory |
+
+## Scripts
+
+| File | Purpose |
+|---|---|
+| `scripts/bootstrap.sh` | First-time setup: `docker-compose.env` with a generated secret key and database password, all data directories, ownership, pull, start, readiness wait |
+| `scripts/upgrade.sh` | Version bump with a verified backup, start, verification and rollback instructions |
+| `scripts/backup.sh` | `document_exporter` (the official mechanism) plus `pg_dump`, with a check that nothing is being consumed at that moment |
+
+Backups: `./scripts/backup.sh` runs Paperless' own exporter into `PAPERLESS_EXPORT_DIR`
+— documents, thumbnails and all metadata in a portable folder — and additionally
+dumps the database, which restores across versions. Sets land in `$BACKUP_DIR`
+(default `./backups`) and are pruned after `BACKUP_KEEP_DAYS`. Use `--skip-export`
+if you only want the database dump.
+
+```bash
+./scripts/bootstrap.sh        # once
+./scripts/upgrade.sh 2.21     # later, per release
+```
+
+All image tags live in `docker-compose.env` (`PAPERLESS_VERSION`, `POSTGRES_VERSION`,
+`REDIS_VERSION`, `GOTENBERG_VERSION`, `TIKA_VERSION`), so an upgrade changes one value
+instead of editing the Compose file.
+
+Note that this stack is the only one whose configuration file is **not** `.env` —
+everything, including the scripts, works with `docker-compose.env` here. Tika is the
+one component that cannot be pinned meaningfully, because upstream publishes no real
+release tags for it.
+
+The backup in `backup/<timestamp>/` contains the database dump plus `.env`, the data,
+media, consumption and export directories. The Redis directory is deliberately
+excluded: it only holds the task queue, which is rebuilt on start.
 
 ## Data Directories
 

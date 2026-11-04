@@ -1,41 +1,109 @@
-
-# NTFY_CACHE_DIR=./ntfy-cache
-# NTFY_CONFIG_DIR=./ntfy-config
-# NTFY_UID=1000
-# NTFY_GID=1000
-# NTFY_TZ=UTC
+# =============================================================================
+# ntfy – Environment Distribution File
+# Copy this file to ".env" and fill in your values before starting the stack.
 #
-
-# Hostname must contain a valid value
+#   cp env-dist .env
+#   chmod 600 .env
 #
-# NTFY_BASE_URL=https://some.domain.com
+# Values marked [REQUIRED] must be set – the Compose file refuses to start
+# without them.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Docker Images
+# -----------------------------------------------------------------------------
+
+# ntfy image tag. Pin a released version – never "latest".
+# Releases: https://github.com/binwiederhier/ntfy/releases
+# The variable is also what scripts/upgrade.sh bumps.
+NTFY_VERSION=v2.19
+
+# PostgreSQL image tag.
+POSTGRES_VERSION=16-alpine
+
+# -----------------------------------------------------------------------------
+# Runtime data
+# All stack data lives under ./data, which the repository .gitignore excludes.
+# -----------------------------------------------------------------------------
+
+# Host path for the ntfy message cache (undelivered messages).
+NTFY_CACHE_DIR=./data/ntfy-cache
+
+# Host path for the ntfy server configuration (server.yml).
+NTFY_CONFIG_DIR=./data/ntfy-config
+
+# UID and GID the ntfy process runs as inside the container.
+# Set these to match the owner of the two directories above.
+NTFY_UID=1000
+NTFY_GID=1000
+
+# Timezone for the container (affects scheduled tasks and timestamps).
+NTFY_TZ=Europe/Berlin
+
+# -----------------------------------------------------------------------------
+# Network
+# -----------------------------------------------------------------------------
+
+# Host port the ntfy web UI and API are published on.
+# Bind to 127.0.0.1 when running behind a reverse proxy, e.g.
+#   NTFY_EXPOSE_PORT=127.0.0.1:8080
+NTFY_EXPOSE_PORT=8080
+
+# Public base URL of your ntfy instance (must match your reverse proxy).
+# NTFY_BASE_URL=https://ntfy.example.com
+
+# Set to "true" when ntfy runs behind a reverse proxy that terminates TLS.
 # NTFY_BEHIND_PROXY=true
 
-# Exposed port must be set
-#
-# NTFY_EXPOSE_PORT=8080
+# -----------------------------------------------------------------------------
+# Authentication
+# All three values are required as soon as you enable authentication, and all
+# three can be generated with the Config Generator:
+#   https://docs.ntfy.sh/config/#config-generator
+# -----------------------------------------------------------------------------
 
-# NTFY_SMTP_SENDER_ADDR="some.mailhost.org:587"
-# NTFY_SMTP_SENDER_FROM="noreply@lhost.org"
-# NTFY_SMTP_SENDER_USER="mailout@lhost.org"
-
-# SMTP password is mandatory
-#
-# NTFY_SMTP_SENDER_PASS="secretPassword"
-
-# Next three values are mandatory if you want to use any authentication
-# and can be created with the Config Generator
-# 	https://docs.ntfy.sh/config/#config-generator
 # NTFY_AUTH_USERS=""
 # NTFY_AUTH_ACCESS=""
 # NTFY_AUTH_TOKENS=""
 
+# How long ntfy keeps messages for clients that are offline.
 # NTFY_CACHE_DURATION="12h"
 
-# POSTGRES_DATA_DIR=./postgres
-# POSTGRES_USER="ntfy"
+# -----------------------------------------------------------------------------
+# PostgreSQL Database
+# -----------------------------------------------------------------------------
 
-# Postgres password is mandatory
-# 
-# POSTGRES_PASSWORD=ntfy
-# POSTGRES_DB=ntfy_db
+# Host path for persistent PostgreSQL data files.
+POSTGRES_DATA_DIR=./data/postgres
+
+# Database name created on first startup.
+POSTGRES_DB=ntfy_db
+
+# PostgreSQL username used by ntfy.
+POSTGRES_USER=ntfy
+
+# PostgreSQL password. [REQUIRED]
+# Replace with a strong password before first startup.
+POSTGRES_PASSWORD=CHANGEME
+
+# -----------------------------------------------------------------------------
+# SMTP / Email Settings (optional)
+# -----------------------------------------------------------------------------
+
+# NTFY_SMTP_SENDER_ADDR="some.mailhost.org:587"
+# NTFY_SMTP_SENDER_FROM="noreply@some.mailhost.org"
+# NTFY_SMTP_SENDER_USER="mailout@some.mailhost.org"
+
+# SMTP password – mandatory as soon as a sender address is configured.
+# NTFY_SMTP_SENDER_PASS="secretPassword"
+
+# -----------------------------------------------------------------------------
+# Backups
+# -----------------------------------------------------------------------------
+
+# Host path where scripts/backup.sh writes its timestamped backup sets.
+BACKUP_DIR=./backups
+
+# How many days a backup set is kept before scripts/backup.sh prunes it.
+# Override per run with: ./scripts/backup.sh --keep-days 30
+BACKUP_KEEP_DAYS=7

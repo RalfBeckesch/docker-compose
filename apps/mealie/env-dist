@@ -6,6 +6,19 @@
 # =============================================================================
 
 # -----------------------------------------------------------------------------
+# Docker Images
+# -----------------------------------------------------------------------------
+
+# Mealie image tag. Pin a released version – never "latest".
+# Releases: https://github.com/mealie-recipes/mealie/releases
+# The variable is also what scripts/upgrade.sh bumps.
+MEALIE_VERSION=v3.13.1
+
+# PostgreSQL image tag. Mealie works with 15+; 17 is the version this stack
+# has been running on.
+POSTGRES_VERSION=17
+
+# -----------------------------------------------------------------------------
 # Docker Image & Container
 # -----------------------------------------------------------------------------
 
@@ -37,7 +50,7 @@ ALLOW_SIGNUP=false
 # -----------------------------------------------------------------------------
 
 # Host path for persistent Mealie data (recipes, images, backups, config).
-MEALIE_DATA=./mealie-data
+MEALIE_DATA=./data/mealie
 
 # UID and GID the application process runs as inside the container.
 # Set these to match the owner of the MEALIE_DATA directory on the host
@@ -50,7 +63,7 @@ GID=1000
 # -----------------------------------------------------------------------------
 
 # Host path for persistent PostgreSQL data files.
-POSTGRES_DATA=./postgres-data
+POSTGRES_DATA=./data/postgres
 
 # Database name created on first startup.
 POSTGRES_DB=mealie
@@ -86,3 +99,14 @@ SMTP_PASSWORD=your-smtp-password-here
 # API key for OpenAI-powered features (e.g. recipe parsing from plain text/URL).
 # Leave empty to disable AI features.
 OPENAI_API_KEY=
+
+# -----------------------------------------------------------------------------
+# Backups
+# -----------------------------------------------------------------------------
+
+# Host path where scripts/backup.sh writes its timestamped backup sets.
+BACKUP_DIR=./backups
+
+# How many days a backup set is kept before scripts/backup.sh prunes it.
+# Override per run with: ./scripts/backup.sh --keep-days 30
+BACKUP_KEEP_DAYS=7

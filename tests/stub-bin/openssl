@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Fake openssl: deterministic stand-in for "openssl rand -hex N".
+set -u
+
+if [[ "${1:-}" == "rand" ]]; then
+  for _ in 1 2 3 4; do printf 'abcdef0123456789'; done
+  printf '\n'
+  exit 0
+fi
+exit 0

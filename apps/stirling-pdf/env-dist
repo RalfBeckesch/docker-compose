@@ -7,3 +7,7 @@ pipeline=./data/pipeline
 DISABLE_ADDITIONAL_FEATURES=false
 LANGS=de_DE
 EXPORT_PORT=16780
+
+# Backups: host path for timestamped backup sets and their retention.
+BACKUP_DIR=./backups
+BACKUP_KEEP_DAYS=7
