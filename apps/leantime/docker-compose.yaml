@@ -115,7 +115,14 @@ services:
       # TCP (127.0.0.1), not the socket: the temporary first-run init server
       # listens on the socket only and must not count as ready. mariadb-admin is
       # the binary the official image ships; mysqladmin is only a legacy symlink.
-      test: ["CMD", "mariadb-admin", "ping", "-h", "127.0.0.1", "--silent"]
+      #
+      # The credentials are mandatory. A bare `mariadb-admin ping` connects as
+      # root without a password and the server answers "Access denied for user
+      # 'root'@'127.0.0.1' (using password: NO)" – the check would stay red
+      # forever while the database is perfectly healthy. The password comes from
+      # the container's own environment; $$ keeps Compose from interpolating it
+      # on the host.
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
       interval: 10s
       timeout: 10s
       retries: 10

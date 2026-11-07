@@ -96,8 +96,40 @@ It is read twice: by Compose for interpolation and as `env_file` by both service
 | `BACKUP_DIR` | `./backups` | Host path for the timestamped backup sets |
 | `BACKUP_KEEP_DAYS` | `7` | Retention in days |
 
+### Optional blocks
+
+`env-dist` carries the full `config/sample.env` set from the pinned tag. The blocks
+below are commented out because an active line overrides the application's own
+default — uncomment only what you configure.
+
+| Block | Variables | When to enable |
+|---|---|---|
+| Email / SMTP | `LEAN_EMAIL_RETURN`, `LEAN_EMAIL_FROM_NAME`, `LEAN_EMAIL_USE_SMTP`, `LEAN_EMAIL_SMTP_HOSTS`, `LEAN_EMAIL_SMTP_PORT`, `LEAN_EMAIL_SMTP_SECURE`, `LEAN_EMAIL_SMTP_AUTH`, `LEAN_EMAIL_SMTP_USERNAME`, `LEAN_EMAIL_SMTP_PASSWORD`, `LEAN_EMAIL_SMTP_AUTO_TLS`, `LEAN_EMAIL_SMTP_SSLNOVERIFY` | Always, if password resets and invitations are to arrive. The container has no local MTA, so `LEAN_EMAIL_USE_SMTP=false` cannot deliver |
+| LDAP | `LEAN_LDAP_*` | Directory login. `LEAN_LDAP_KEYS` and `LEAN_LDAP_GROUP_ASSIGNMENT` are JSON and must stay on one line |
+| OIDC / SSO | `LEAN_OIDC_*` | Login through an identity provider |
+| S3 storage | `LEAN_USE_S3`, `LEAN_S3_*` | Uploads in object storage instead of local files |
+| Redis | `LEAN_USE_REDIS`, `LEAN_REDIS_*` | Only after adding a `redis` service to the Compose file |
+| Rate limiting | `LEAN_RATELIMIT_*` | Lower `AUTH` for brute-force hardening; raise the invite limits for bulk onboarding |
+| Reverse proxy | `LEAN_TRUSTED_PROXIES`, `LEAN_HSTS_ENABLED` | A proxy/CDN on a public address, or HSTS behind TLS |
+| Push | `LEAN_PUSH_*` | Mobile push via the Leantime relay (AdvancedAuth licence) |
+
+Mail example for a provider on port 587:
+
+```dotenv
+LEAN_EMAIL_RETURN=leantime@example.com
+LEAN_EMAIL_FROM_NAME=Leantime
+LEAN_EMAIL_USE_SMTP=true
+LEAN_EMAIL_SMTP_HOSTS=smtp.example.com
+LEAN_EMAIL_SMTP_PORT=587
+LEAN_EMAIL_SMTP_SECURE=STARTTLS
+LEAN_EMAIL_SMTP_AUTH=true
+LEAN_EMAIL_SMTP_USERNAME=leantime@example.com
+LEAN_EMAIL_SMTP_PASSWORD=<smtp password>
+LEAN_EMAIL_SMTP_AUTO_TLS=true
+```
+
 > ⚠️ **Keep your `.env` out of version control** — add it to `.gitignore` since it contains
-> three secrets.
+> the database passwords, the session key and, once configured, the SMTP password.
 
 The app-specific variables are documented in the application's own template,
 `config/sample.env` in the [Leantime repository](https://github.com/Leantime/leantime/blob/v3.13.2/config/sample.env).
@@ -235,6 +267,7 @@ otherwise browser form submissions are rejected by the origin check.
 | **`env_file: .env` on the app service** | It passes the whole file, so `MYSQL_ROOT_PASSWORD` is visible inside the app container. The app does not use it; keep the file mode 600 and treat container access as admin access |
 | **MariaDB ↔ MySQL data directory** | The formats are not interchangeable. A switch needs dump/restore, not a volume swap |
 | **MariaDB major upgrade** (`11.4` → `11.8`) | The Compose file sets `MARIADB_AUTO_UPGRADE=1`, so the entrypoint runs `mariadb-upgrade` and writes a `system_mysql_backup_*.sql.zst` into the data directory. Take a `scripts/backup.sh` backup before changing `MARIADB_VERSION` anyway |
+| **DB healthcheck without credentials** | A bare `mariadb-admin ping` connects as `root` without a password and the server logs `Access denied for user 'root'@'127.0.0.1' (using password: NO)`; the container then stays `unhealthy` even though the database is fine. The Compose file passes `-p"$$MYSQL_ROOT_PASSWORD"`, expanded inside the container from its own environment |
 | **App's own `db:backup`** | `php bin/leantime db:backup` writes into `LEAN_DB_BACKUP_PATH` **inside** the container (default `backupdb/`), which is not mounted and disappears on recreate. Use `scripts/backup.sh` |
 | **`utf8mb4_0900_ai_ci`** | MySQL 8's default collation does not exist in MariaDB. This stack pins `utf8mb4_unicode_ci`, which both engines support |
 | **Broken releases 3.6.0 / 3.6.1** | Redirect loops and missing JS assets. `scripts/upgrade.sh` refuses them; use 3.6.2+ |
