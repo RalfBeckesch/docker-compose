@@ -1,0 +1,107 @@
+# =============================================================================
+# Forgejo – environment template.  Copy to .env and edit.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Versions (pinned – never "latest")
+# -----------------------------------------------------------------------------
+# Forgejo release to run. Releases: https://codeberg.org/forgejo/forgejo/releases
+# The image is served from Codeberg's registry; the mirror data.forgejo.org
+# carries the same tags if codeberg.org is unreachable.
+FORGEJO_VERSION=17.0.1
+
+# PostgreSQL image tag. Forgejo supports PostgreSQL 12 and newer; 18 is the
+# current stable line. NOTE: postgres:18 keeps its data in
+# /var/lib/postgresql/<major>/docker and declares /var/lib/postgresql as its
+# volume – which is why the mount in docker-compose.yaml points there and not
+# at /var/lib/postgresql/data (the path used by postgres:16/17).
+POSTGRES_VERSION=18
+
+# -----------------------------------------------------------------------------
+# Compose / Project
+# -----------------------------------------------------------------------------
+COMPOSE_PROJECT_NAME=forgejo
+
+# -----------------------------------------------------------------------------
+# Network
+# -----------------------------------------------------------------------------
+# Address the web UI is published on. 127.0.0.1 → loopback only, intended to sit
+# behind a reverse proxy. Set BIND_ADDR=0.0.0.0 for direct LAN access.
+BIND_ADDR=127.0.0.1
+
+# Host port for the web UI (container listens on 3000).
+FORGEJO_HTTP_PORT=3000
+
+# Host port for the built-in SSH server (container listens on 22).
+# 22 on the host is usually taken by the host's own sshd, so this stack uses
+# 2222. Git clients must use ssh://git@<host>:2222/<owner>/<repo>.git
+FORGEJO_SSH_PORT=2222
+
+# Interface the SSH port is published on. SSH must be reachable by git clients,
+# so this defaults to all interfaces – restrict it with a firewall/VPN instead
+# of binding to loopback.
+FORGEJO_SSH_BIND=0.0.0.0
+
+# -----------------------------------------------------------------------------
+# Public URL and host names
+# -----------------------------------------------------------------------------
+# ROOT_URL must match exactly what users type in the browser, including the
+# trailing slash. A wrong value breaks links, webhooks and OAuth callbacks.
+FORGEJO_ROOT_URL=http://localhost:3000/
+
+# Host name Forgejo advertises in clone URLs and e-mails.
+FORGEJO_DOMAIN=localhost
+
+# Host name used in the SSH clone URLs (may differ from FORGEJO_DOMAIN when SSH
+# is reached through another host or port forward).
+FORGEJO_SSH_DOMAIN=localhost
+
+# -----------------------------------------------------------------------------
+# Security
+# -----------------------------------------------------------------------------
+# Signs session cookies. Generate once with: openssl rand -hex 32
+# Changing it logs every user out.
+FORGEJO_SECRET_KEY=CHANGEME
+
+# Shared secret for internal API calls between Forgejo components.
+# Generate once with: openssl rand -hex 40
+FORGEJO_INTERNAL_TOKEN=CHANGEME
+
+# Signs OAuth2/JWT tokens. Generate once with: openssl rand -hex 32
+FORGEJO_JWT_SECRET=CHANGEME
+
+# Self-registration. Leave false for the first start, create the admin account,
+# then keep it false. Set true only while you deliberately onboard users.
+FORGEJO_DISABLE_REGISTRATION=false
+
+# -----------------------------------------------------------------------------
+# Container user
+# -----------------------------------------------------------------------------
+# The container runs as this UID/GID and requires the data directory to be owned
+# by it. scripts/bootstrap.sh applies the chown. Under rootless Docker set both
+# to 0:0 (the kernel maps them, and a non-root owner breaks the mount).
+FORGEJO_UID=1000
+FORGEJO_GID=1000
+
+# -----------------------------------------------------------------------------
+# Database
+# -----------------------------------------------------------------------------
+POSTGRES_DB=forgejo
+POSTGRES_USER=forgejo
+POSTGRES_PASSWORD=CHANGEME
+
+# -----------------------------------------------------------------------------
+# Data paths (host side, relative to this directory)
+# -----------------------------------------------------------------------------
+# app.ini, repositories, LFS objects, avatars, attachments, SSH host keys and
+# the indexer state. This single directory is the instance's state.
+FORGEJO_DATA=./data/forgejo
+POSTGRES_DATA=./data/forgejo/postgres
+
+# -----------------------------------------------------------------------------
+# Backups
+# -----------------------------------------------------------------------------
+# How many days a backup set is kept before scripts/backup.sh prunes it.
+# Override per run with: ./scripts/backup.sh --keep-days 30
+BACKUP_DIR=./backups
+BACKUP_KEEP_DAYS=7

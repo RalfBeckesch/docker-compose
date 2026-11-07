@@ -79,8 +79,7 @@ cd docker-compose/apps/mealie
 
 `stirling-pdf` and `searxng` have **no** upgrade script on purpose: neither keeps a
 database that a new image would have to migrate, so `pull` + `up -d` is the complete
-and correct procedure there. `forgejo` has no script because the stack does not exist
-yet.
+and correct procedure there.
 
 ---
 
@@ -100,6 +99,7 @@ application, because a generic "tar the folder" is wrong more often than it is r
 | ntfy | `pg_dump` (cache, users, ACLs, tokens) + config directory; message cache and attachments are deliberately skipped — they expire after 12h / 3h | [ntfy config docs](https://docs.ntfy.sh/config/) |
 | stirling-pdf | short stop → archive `${extraConfigs}` (settings, keystore, built-in database), custom files, pipeline | [Stirling-PDF configs](https://docs.stirlingpdf.com/) |
 | searxng | archive the configuration mount (`settings.yml`, `limiter.toml`, `favicons.toml`) while the container keeps running; cache and Valkey are deliberately skipped | [SearXNG Docker docs](https://docs.searxng.org/admin/installation-docker.html) |
+| leantime | `mariadb-dump --single-transaction --quick --triggers` (online, no stop) + archive of `userfiles/`, `public/userfiles/`, `app/Plugins/` and `storage/logs/` | [Leantime backup docs](https://docs.leantime.io/installation/backup-restore) |
 
 Every set contains the app's `.env` (mode 600), a `MANIFEST.txt` describing what was
 captured, and the resolved image tags (`images.txt`). Each script verifies what it

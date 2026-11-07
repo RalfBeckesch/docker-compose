@@ -96,6 +96,12 @@ build_sandbox() {
       host_path_vars=(extraConfigs customFiles pipeline logs tessdata_trainingData) ;;
     searxng)
       host_path_vars=(SEARXNG_CONFIG SEARXNG_DATA VALKEY_DATA) ;;
+    forgejo)
+      host_path_vars=(FORGEJO_DATA POSTGRES_DATA) ;;
+    open-notebook)
+      host_path_vars=(SURREAL_DATA NOTEBOOK_DATA) ;;
+    leantime)
+      host_path_vars=(MARIADB_DATA LEAN_USERFILES LEAN_PUBLIC_USERFILES LEAN_PLUGINS LEAN_LOGS) ;;
     *) host_path_vars=() ;;
   esac
 
@@ -138,6 +144,10 @@ build_sandbox() {
   sed -i "s|^COLLABORA_ADMIN_PASSWORD=.*|COLLABORA_ADMIN_PASSWORD=test-only|" "${target}/${env_name}" 2>/dev/null
   sed -i "s|^REDIS_PASSWORD=.*|REDIS_PASSWORD=test-only|" "${target}/${env_name}" 2>/dev/null
   sed -i "s|^SEARXNG_SECRET=.*|SEARXNG_SECRET=test-only-secret|" "${target}/${env_name}" 2>/dev/null
+  # Leantime uses MariaDB credential names and its own session key.
+  sed -i "s|^MYSQL_ROOT_PASSWORD=.*|MYSQL_ROOT_PASSWORD=test-only-root-password|" "${target}/${env_name}" 2>/dev/null
+  sed -i "s|^MYSQL_PASSWORD=.*|MYSQL_PASSWORD=test-only-password|" "${target}/${env_name}" 2>/dev/null
+  sed -i "s|^LEAN_SESSION_PASSWORD=.*|LEAN_SESSION_PASSWORD=test-only-session|" "${target}/${env_name}" 2>/dev/null
 
   printf '%s\n' "${target}"
 }
@@ -183,7 +193,9 @@ test_upgrade_script() {
   if [[ -n "${backup_dir}" ]]; then
     check "${app}: backup directory created" "0" "$( [[ -d "${backup_dir}" ]] && echo 0 || echo 1 )"
     check "${app}: env file backed up" "0" "$( [[ -f "${backup_dir}/env.backup" ]] && echo 0 || echo 1 )"
-    check "${app}: data archive created" "0" "$( [[ -f "${backup_dir}/data.tar.gz" ]] && echo 0 || echo 1 )"
+    # The archive name differs per app (data.tar.gz, state.tar.gz, dump archive…).
+    check "${app}: backup archive created" "0" \
+          "$( [[ -s "${backup_dir}/$(backup_archive_for "${app}")" ]] && echo 0 || echo 1 )"
     check "${app}: resolved image recorded" "0" "$( [[ -f "${backup_dir}/images-resolved.txt" ]] && echo 0 || echo 1 )"
     check_contains "${app}: resolved image matches the target" "${target_version}" \
           "$(cat "${backup_dir}/images-resolved.txt" 2>/dev/null)"
@@ -198,6 +210,28 @@ test_upgrade_script() {
       ;;
     vaultwarden)
       check_contains "${app}: stop before copying" "stopping the stack" "${output}"
+      ;;
+    forgejo)
+      # The upgrade runs backup.sh and captures its output; on success only the
+      # summary line reaches stdout. The dump-specific text stays inside the
+      # backup run (covered by test_backup_script).
+      check_contains "${app}: backup completed" "backup complete" "${output}"
+      check_contains "${app}: resolved configuration confirmed" "resolved configuration confirmed" "${output}"
+      check_contains "${app}: health check passed" "Forgejo is answering" "${output}"
+      ;;
+    open-notebook)
+      check_contains "${app}: backup completed" "backup complete" "${output}"
+      check_contains "${app}: resolved configuration confirmed" "resolved configuration confirmed" "${output}"
+      check_contains "${app}: health check passed" "the API answers on /health" "${output}"
+      ;;
+    leantime)
+      # The upgrade runs backup.sh and captures its output; on success only the
+      # summary line reaches stdout. The dump-specific text stays inside the
+      # backup run (covered by test_backup_script).
+      check_contains "${app}: backup completed" "backup complete" "${output}"
+      check_contains "${app}: resolved configuration confirmed" "resolved configuration confirmed" "${output}"
+      check_contains "${app}: health check passed" "Leantime is answering" "${output}"
+      check_contains "${app}: migrations were run" "running the database migrations" "${output}"
       ;;
     *)
       check_contains "${app}: database dump verified" "dump verified" "${output}"
@@ -235,6 +269,9 @@ version_key() {
     mealie)                          printf 'MEALIE_VERSION' ;;
     ntfy)                            printf 'NTFY_VERSION' ;;
     vaultwarden)                     printf 'VERSION' ;;
+    forgejo)                         printf 'FORGEJO_VERSION' ;;
+    open-notebook)                   printf 'OPEN_NOTEBOOK_VERSION' ;;
+    leantime)                        printf 'LEANTIME_VERSION' ;;
   esac
 }
 
@@ -267,6 +304,18 @@ test_bootstrap_script() {
   check "${app}: second run leaves the env file alone" "${before}" "${after}"
 }
 
+# The single archive file a backup set is built around, per app. Used by the
+# upgrade test, which checks that the backup really produced its main artifact.
+backup_archive_for() {
+  case "$1" in
+    stirling-pdf)   printf 'state.tar.gz' ;;
+    searxng)        printf 'config.tar.gz' ;;
+    forgejo)        printf 'forgejo-dump.tar.gz' ;;
+    open-notebook)  printf 'state.tar.gz' ;;
+    *)              printf 'data.tar.gz' ;;
+  esac
+}
+
 # Files a complete backup set must contain, per app.
 expected_backup_files() {
   case "$1" in
@@ -278,6 +327,9 @@ expected_backup_files() {
     vikunja)                         printf 'vikunja-dump.zip db.sql.gz env.backup MANIFEST.txt images.txt' ;;
     stirling-pdf)                    printf 'state.tar.gz env.backup MANIFEST.txt images.txt' ;;
     searxng)                         printf 'config.tar.gz env.backup MANIFEST.txt images.txt' ;;
+    forgejo)                         printf 'forgejo-dump.tar.gz env.backup MANIFEST.txt images.txt' ;;
+    open-notebook)                   printf 'state.tar.gz env.backup MANIFEST.txt images.txt' ;;
+    leantime)                        printf 'db.sql.gz data.tar.gz env.backup MANIFEST.txt images.txt' ;;
   esac
 }
 
@@ -361,6 +413,24 @@ test_backup_script() {
       check "searxng: no database dump attempted" "1" \
             "$( grep -q 'database dump verified' <<< "${output}" && echo 0 || echo 1 )"
       ;;
+    forgejo)
+      # The vendor dump packs app.ini and the SQL dump; the script verifies both.
+      # Only the server container stops, the database keeps running – so the
+      # restart is a `compose start server`, not a full `up -d`.
+      check_contains "${app}: dump archive verified" "dump archive verified" "${output}"
+      check_contains "${app}: server restarted" "server container started again" "${output}"
+      ;;
+    open-notebook)
+      check_contains "${app}: archive verified" "archive verified" "${output}"
+      check_contains "${app}: stack stopped for the copy" "stopping the stack" "${output}"
+      check_contains "${app}: stack restarted" "starting the stack again" "${output}"
+      ;;
+    leantime)
+      # Online dump (no stop) plus an archive of the four writable directories.
+      check_contains "${app}: database dump verified" "database dump verified" "${output}"
+      check_contains "${app}: data archive verified" "data archive verified" "${output}"
+      check_contains "${app}: userfiles archived" "userfiles is part of the archive" "${output}"
+      ;;
     *)
       check_contains "${app}: database dump verified" "database dump verified" "${output}"
       ;;
@@ -435,6 +505,15 @@ main() {
   test_backup_script "stirling-pdf" ".env"
   test_bootstrap_script "searxng" ".env"
   test_backup_script "searxng" ".env"
+  test_upgrade_script "forgejo" "upgrade.sh" "17.0.2" ".env"
+  test_bootstrap_script "forgejo" ".env"
+  test_backup_script "forgejo" ".env"
+  test_upgrade_script "open-notebook" "upgrade.sh" "1.15.2" ".env"
+  test_bootstrap_script "open-notebook" ".env"
+  test_backup_script "open-notebook" ".env"
+  test_upgrade_script "leantime" "upgrade.sh" "3.13.3" ".env"
+  test_bootstrap_script "leantime" ".env"
+  test_backup_script "leantime" ".env"
 
   echo
   echo "=== ${PASS} OK, ${FAIL} FAIL ==="

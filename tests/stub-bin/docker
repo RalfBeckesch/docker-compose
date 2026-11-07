@@ -10,17 +10,21 @@ Understands exactly the subset the scripts use:
 from the env file, so the resolved-image assertions in the scripts are
 exercised for real.
 
-`compose exec` handles the three commands the scripts rely on to produce
-output on the HOST:
+`compose exec` handles the commands the scripts rely on to produce output on
+the HOST:
   * pg_dump            -> a plausible PostgreSQL dump on stdout
+  * mariadb-dump       -> a plausible MariaDB/MySQL dump on stdout
+                         (mysqldump and the sh -c "exec ..." form included)
   * document_exporter  -> writes manifest.json into the export bind mount
   * vikunja dump       -> writes a real ZIP into the files bind mount
 Both write through the compose volume mapping, so the scripts' verification
 steps run against files that actually exist.
 """
+import io
 import os
 import re
 import sys
+import tarfile
 import zipfile
 
 VAR = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::([-?])([^}]*))?\}")
@@ -114,6 +118,19 @@ def pg_dump_output():
     print("-- PostgreSQL database dump complete")
 
 
+def mysql_dump_output():
+    print("-- MariaDB dump 10.19  Distrib 11.4.0, for debian-linux-gnu (x86_64)")
+    print("--")
+    print("-- Host: localhost    Database: leantime")
+    print("-- ------------------------------------------------------")
+    print("-- Server version\t11.4.0-MariaDB")
+    print("")
+    for index in range(60):
+        print(f"INSERT INTO `zp_tickets` VALUES ({index}, 'payload-{index}');")
+    print("/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;")
+    print("-- Dump completed on 2026-11-07")
+
+
 def write_document_export(compose_file, values, target):
     host = volume_host_path(compose_file, target, values)
     if not host:
@@ -146,6 +163,35 @@ def write_vikunja_dump(compose_file, values, container_path, filename):
     return 0
 
 
+def write_forgejo_dump(compose_file, values, target):
+    """Write a plausible `forgejo dump` archive into the bind mount."""
+    container_dir = os.path.dirname(target) or "/data"
+    filename = os.path.basename(target)
+    host = volume_host_path(compose_file, container_dir, values)
+    if not host:
+        sys.stderr.write(f"forgejo dump: no bind mount for {container_dir}\n")
+        return 1
+    os.makedirs(host, exist_ok=True)
+    archive_path = os.path.join(host, filename)
+    rows = "\n".join(
+        f"INSERT INTO repository VALUES ({index}, 'repo-{index}', 'main');"
+        for index in range(400)
+    )
+    with tarfile.open(archive_path, "w:gz") as archive:
+        for name, payload in (
+            ("app.ini", "[server]\nROOT_URL = http://localhost:3000/\n[database]\nDB_TYPE = postgres\n"),
+            ("forgejo-db.sql", "SET statement_timeout = 0;\n" + rows + "\n"),
+            ("repos/git/repositories/user/demo.git/HEAD", "ref: refs/heads/main\n"),
+        ):
+            data = payload.encode()
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            info.mtime = 0
+            archive.addfile(info, io.BytesIO(data))
+    print("Finish dumping in file " + target)
+    return 0
+
+
 def cmd_exec(compose_file, env_file, command):
     values = read_env(env_file)
     if not command:
@@ -156,9 +202,20 @@ def cmd_exec(compose_file, env_file, command):
         return 0
     if command[0] == "psql":
         return 0
+    # mariadb-dump, directly or wrapped as sh -c 'exec mariadb-dump ...' – the
+    # backup script uses the wrapper so the password stays in the container.
+    if "mariadb-dump" in " ".join(command) or "mysqldump" in " ".join(command):
+        mysql_dump_output()
+        return 0
+    if command[0] in ("mysql", "mariadb"):
+        return 0
     if command[0] == "document_exporter":
         target = command[1] if len(command) > 1 else "/usr/src/paperless/export"
         return write_document_export(compose_file, values, target)
+    # forgejo/gitea dump --type tar.gz --file <path>  (forgejo, gitea or the
+    # entrypoint binary all end up here)
+    if "dump" in command and "--file" in command and "vikunja" not in command:
+        return write_forgejo_dump(compose_file, values, command[command.index("--file") + 1])
     if command[-1] == "dump" or "dump" in command:
         # vikunja dump -p <path> -f <name>
         container_path = "/app/vikunja/files"
@@ -240,6 +297,26 @@ def main():
                 and command_args[1] == "occ":
             command_args = [argument for argument in command_args[1:] if argument != "occ"]
         return cmd_exec(compose_file, env_file, command_args)
+    if command == "run":
+        # docker compose run [OPTIONS] SERVICE [COMMAND] [ARGS...]
+        # Options that take a value are skipped together with their value;
+        # flags without a value are dropped. The first positional argument is
+        # the service name, everything after it is the command to execute.
+        cleaned = []
+        skip_next = False
+        for argument in parameters:
+            if skip_next:
+                skip_next = False
+                continue
+            if argument in ("--user", "-u", "--entrypoint", "-w", "--workdir",
+                            "--name", "-e", "--env"):
+                skip_next = True
+                continue
+            if argument in ("--rm", "-T", "--no-deps", "-d", "--quiet-pull"):
+                continue
+            cleaned.append(argument)
+        run_command = cleaned[1:] if len(cleaned) > 1 else []
+        return cmd_exec(compose_file, env_file, run_command)
     return 0
 
 

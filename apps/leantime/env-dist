@@ -1,0 +1,164 @@
+# =============================================================================
+# Leantime – Environment Distribution File
+# Copy this file to ".env" and fill in your values before starting the stack.
+#
+#   cp env-dist .env
+#   chmod 600 .env
+#
+# Every value marked CHANGEME must be replaced before the first start –
+# scripts/bootstrap.sh does that for you and generates the secrets.
+#
+# This file is read twice: by Docker Compose (interpolation) and as env_file by
+# both services. Keep it shell-compatible: no spaces around "=", no unescaped $.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Compose / Project
+# -----------------------------------------------------------------------------
+
+# Prefix for all container names of this stack.
+COMPOSE_PROJECT_NAME=leantime
+
+# -----------------------------------------------------------------------------
+# Docker Images
+# -----------------------------------------------------------------------------
+
+# Leantime image tag. Pin a released version, never "latest": an unpinned tag
+# pulls an arbitrary version on the next `docker compose pull`.
+# Tags: https://hub.docker.com/r/leantime/leantime/tags
+# Note: the Docker tag carries no "v" prefix (3.13.2), the Git tag does (v3.13.2).
+LEANTIME_VERSION=3.13.2
+
+# MariaDB image tag. Leantime's requirements list "MySQL 8.0+ or MariaDB 10.6+",
+# and the maintainers run their own cloud instances on MariaDB (see
+# https://github.com/Leantime/leantime/discussions/1782). The upstream Helm
+# chart also deploys MariaDB. 11.4 is a long-term-support release.
+# Tags: https://hub.docker.com/r/library/mariadb/tags
+MARIADB_VERSION=11.4
+
+# -----------------------------------------------------------------------------
+# Network
+# -----------------------------------------------------------------------------
+
+# Address the Leantime web UI is published on.
+#   127.0.0.1 → loopback only, intended to sit behind a reverse proxy (default)
+#   0.0.0.0   → reachable from the LAN
+# Restrict access with a firewall/VLAN if you bind to 0.0.0.0.
+LEAN_BIND_ADDR=127.0.0.1
+
+# Host port mapped to the container's port 8080.
+LEAN_HOST_PORT=8080
+
+# Port Leantime itself uses inside the container. This is fixed by the image's
+# nginx configuration and must stay 8080 – the host port above is the one you
+# change. Only change this if you build your own image.
+LEAN_PORT=8080
+
+# -----------------------------------------------------------------------------
+# Storage
+# -----------------------------------------------------------------------------
+
+# Host path for the MariaDB data directory. The container's entrypoint starts as
+# root and fixes the ownership itself – do not chown it from the host.
+# The directory format is MariaDB-specific: it cannot be swapped with a MySQL
+# data directory. A migration between the two engines goes through dump/restore.
+MARIADB_DATA=./data/leantime/mariadb
+
+# Host paths for the four writable application directories. They must belong to
+# LEAN_UID:LEAN_GID (scripts/bootstrap.sh sets that up).
+#   userfiles         → uploaded files and project attachments
+#   public-userfiles  → logos and other publicly served files
+#   plugins           → installed plugins
+#   logs              → LEAN_LOG_CHANNELS=single writes storage/logs/leantime.log
+LEAN_USERFILES=./data/leantime/userfiles
+LEAN_PUBLIC_USERFILES=./data/leantime/public-userfiles
+LEAN_PLUGINS=./data/leantime/plugins
+LEAN_LOGS=./data/leantime/logs
+
+# -----------------------------------------------------------------------------
+# Leantime Application
+# -----------------------------------------------------------------------------
+
+# Public base URL including the scheme and a trailing slash. Not optional:
+# without it password-reset and invitation mails are not sent.
+LEAN_APP_URL=http://localhost:8080/
+
+# Subfolder the app is served from, without a trailing slash (e.g. /leantime).
+# Leave empty for a domain-root installation.
+LEAN_APP_DIR=
+
+# User/group the application runs as inside the container. The published image
+# is built for uid 1000 and group 0 (www-data:0 with group-writable dirs).
+# PUID/PGID are BUILD args – setting them here has no effect on the image.
+LEAN_UID=1000
+LEAN_GID=0
+
+# Name shown in the UI and in notification mails.
+LEAN_SITENAME=Leantime
+
+# Default language for new users.
+LEAN_LANGUAGE=en-US
+
+# Default timezone for new users (and for date handling).
+# Full list: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+LEAN_DEFAULT_TIMEZONE=America/Winnipeg
+
+# Debug flag. Leave 0 in production: 1 exposes stack traces and query output.
+LEAN_DEBUG=0
+
+# Session salting key. Generate one:
+#   openssl rand -hex 32
+# Changing this value later logs every user out.
+LEAN_SESSION_PASSWORD=CHANGEME
+
+# Session idle timeout in MINUTES (Laravel's session.lifetime unit).
+# 480 minutes = 8 hours. The Docker-Repo sample.env still claims seconds and
+# suggests 28800 – that would be a 60× longer timeout.
+LEAN_SESSION_EXPIRATION=480
+
+# Serve cookies over HTTPS only. Set to true once the reverse proxy terminates
+# TLS; false while the stack is reached over plain HTTP.
+LEAN_SESSION_SECURE=false
+
+# Send a daily anonymous usage summary to telemetry.leantime.io. false = never.
+LEAN_ALLOW_TELEMETRY=false
+
+# Leantime's news widget. false for instances without outbound access.
+LEAN_NEWS_ENABLED=false
+
+# Logging channels. "single" writes storage/logs/leantime.log (mounted below).
+# The image default is "single,syslog,sentry" – syslog has no daemon in the
+# container and would fail on every log write.
+LEAN_LOG_CHANNELS=single
+
+# Leantime can use Redis for caching/sessions. Not part of this stack.
+LEAN_USE_REDIS=false
+
+# -----------------------------------------------------------------------------
+# MariaDB Database
+# -----------------------------------------------------------------------------
+# The names stay MYSQL_* on purpose: the official mariadb image reads both the
+# MYSQL_* and the MARIADB_* spellings, and Leantime's own LEAN_DB_* config maps
+# onto them one to one. Keeping the classic names means the same .env works if
+# you ever switch the service back to the mysql image.
+
+# Root password of the database server. Only the database container needs it.
+MYSQL_ROOT_PASSWORD=CHANGEME
+
+# Database and application user created on first start. The Compose file maps
+# these onto LEAN_DB_* for the app, so they always match.
+MYSQL_DATABASE=leantime
+MYSQL_USER=leantime
+MYSQL_PASSWORD=CHANGEME
+
+# -----------------------------------------------------------------------------
+# Backups
+# -----------------------------------------------------------------------------
+
+# Host path where scripts/backup.sh writes its timestamped backup sets
+# (and where scripts/upgrade.sh keeps its pre-upgrade safety nets).
+BACKUP_DIR=./backups
+
+# How many days a backup set is kept before scripts/backup.sh prunes it.
+# Override per run with: ./scripts/backup.sh --keep-days 30
+BACKUP_KEEP_DAYS=7

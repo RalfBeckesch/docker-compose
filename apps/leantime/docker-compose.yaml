@@ -1,0 +1,130 @@
+# =============================================================================
+# Leantime – Docker Compose Stack
+# Services: Leantime (PHP/Laravel project management), MariaDB 11.4
+#
+# Leantime's requirements list "MySQL 8.0+ or MariaDB 10.6+" and the maintainers
+# run their own cloud on MariaDB, so this stack uses MariaDB. The service still
+# reads the MYSQL_* variable names – the official mariadb image supports them.
+#
+# Supported architectures: amd64, arm64
+#
+# First-time setup:
+#   1. cp env-dist .env && chmod 600 .env   → fill in every CHANGEME value
+#   2. ./scripts/bootstrap.sh               → creates data dirs, pulls, starts
+#   3. Open the UI and create the first account (it becomes the admin)
+#
+# Update: ./scripts/upgrade.sh <version>
+#         (`docker compose pull && docker compose up -d` works too, but skips
+#          the verified backup and the version check)
+# Docs:   https://docs.leantime.io/
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Leantime – project management UI and API in one container
+  #
+  # The published image runs as uid 1000 with group 0 and ships its writable
+  # directories as www-data:0 with group-write. That is why user "1000:0" and
+  # the four bind mounts below are not optional – without matching ownership
+  # uploads, plugin installs and log writes fail with "permission denied".
+  # scripts/bootstrap.sh applies the chown; a plain `docker compose up -d`
+  # does not.
+  # ---------------------------------------------------------------------------
+  leantime:
+    image: leantime/leantime:${LEANTIME_VERSION:?LEANTIME_VERSION must be set in .env}
+    container_name: ${COMPOSE_PROJECT_NAME:-leantime}
+    restart: unless-stopped
+    # Fixed by the image: uid 1000, gid 0. PUID/PGID are build args and have no
+    # effect on the published image.
+    user: "${LEAN_UID:-1000}:${LEAN_GID:-0}"
+    # The app variables come from .env. The database credentials are mapped
+    # explicitly below so they always match the MySQL service – env_file values
+    # are passed through verbatim, without ${VAR} interpolation.
+    env_file: .env
+    security_opt:
+      - no-new-privileges:true
+    # The image's own chown/nginx setup needs these; keep them in sync with the
+    # upstream Compose file rather than guessing a smaller set.
+    cap_add:
+      - CAP_CHOWN
+      - CAP_SETGID
+      - CAP_SETUID
+    ports:
+      # <bind_address>:<host_port> -> container port 8080 (fixed by the image).
+      # Loopback by default: intended to sit behind a reverse proxy.
+      # For direct LAN access set LEAN_BIND_ADDR=0.0.0.0 in .env.
+      - "${LEAN_BIND_ADDR:-127.0.0.1}:${LEAN_HOST_PORT:-8080}:8080"
+    volumes:
+      - ${LEAN_USERFILES:?LEAN_USERFILES must be set in .env}:/var/www/html/userfiles
+      - ${LEAN_PUBLIC_USERFILES:?LEAN_PUBLIC_USERFILES must be set in .env}:/var/www/html/public/userfiles
+      - ${LEAN_PLUGINS:?LEAN_PLUGINS must be set in .env}:/var/www/html/app/Plugins
+      - ${LEAN_LOGS:?LEAN_LOGS must be set in .env}:/var/www/html/storage/logs
+    environment:
+      # Database wiring. Service names are fixed by the network below.
+      # LEAN_DB_USER/PASSWORD/DATABASE must equal MYSQL_USER/PASSWORD/DATABASE;
+      # taking them from the same variables is the only way to guarantee that.
+      LEAN_DB_HOST: db
+      LEAN_DB_PORT: "3306"
+      LEAN_DB_USER: ${MYSQL_USER:?MYSQL_USER must be set in .env}
+      LEAN_DB_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD must be set in .env}
+      LEAN_DB_DATABASE: ${MYSQL_DATABASE:?MYSQL_DATABASE must be set in .env}
+    depends_on:
+      db:
+        condition: service_healthy   # wait for the DB healthcheck before starting
+    healthcheck:
+      # /health answers 200 when the database is reachable, 503 otherwise.
+      # Route: app/Domain/Status/routes.php – no session, no auth, no rate limit.
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # The first start runs the schema migrations; give it room.
+      start_period: 180s
+    networks:
+      - leantime
+
+  # ---------------------------------------------------------------------------
+  # MariaDB 11.4 (LTS) – persistent database
+  #
+  # Leantime lists "MySQL 8.0+ or MariaDB 10.6+" as its requirement and runs its
+  # own cloud on MariaDB. utf8mb4_unicode_ci is the collation the app's schema
+  # uses; MySQL 8's utf8mb4_0900_ai_ci does not exist in MariaDB.
+  #
+  # The entrypoint starts as root and fixes the ownership of /var/lib/mysql
+  # itself, so the host directory is deliberately not chowned by bootstrap.sh.
+  # The data directory format is engine-specific: moving to or from MySQL needs
+  # a dump/restore, not a volume swap.
+  # ---------------------------------------------------------------------------
+  db:
+    image: mariadb:${MARIADB_VERSION:?MARIADB_VERSION must be set in .env}
+    container_name: ${COMPOSE_PROJECT_NAME:-leantime}-db
+    restart: unless-stopped
+    env_file: .env
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    environment:
+      # Run mariadb-upgrade against the existing data directory when the image
+      # version changes (10.11 -> 11.4, 11.4 -> 11.8, ...). Without it the
+      # system tables stay at the old format and the server refuses to start or
+      # serves broken metadata after a major upgrade. The entrypoint also writes
+      # a system-table backup (system_mysql_backup_*.sql.zst) into the data dir.
+      MARIADB_AUTO_UPGRADE: "1"
+    volumes:
+      - ${MARIADB_DATA:?MARIADB_DATA must be set in .env}:/var/lib/mysql
+    healthcheck:
+      # TCP (127.0.0.1), not the socket: the temporary first-run init server
+      # listens on the socket only and must not count as ready. mariadb-admin is
+      # the binary the official image ships; mysqladmin is only a legacy symlink.
+      test: ["CMD", "mariadb-admin", "ping", "-h", "127.0.0.1", "--silent"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      # The first start initializes the data directory, which takes minutes on
+      # slow storage (NAS HDD arrays). Failed checks in this window don't count.
+      start_period: 300s
+    networks:
+      - leantime
+
+networks:
+  leantime:
+    driver: bridge

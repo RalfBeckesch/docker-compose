@@ -1,0 +1,103 @@
+# =============================================================================
+# Open Notebook – environment template.  Copy to .env and edit.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Versions (pinned – never "latest")
+# -----------------------------------------------------------------------------
+# Open Notebook release to run. Tags: https://hub.docker.com/r/lfnovo/open_notebook/tags
+# Releases: https://github.com/lfnovo/open-notebook/releases
+OPEN_NOTEBOOK_VERSION=1.15.1
+
+# SurrealDB image tag. The application's Dockerfile is built against the v2
+# line and ships the matching binary; 2.7.0 is the current stable v2 release.
+SURREALDB_VERSION=v2.7.0
+
+# -----------------------------------------------------------------------------
+# Compose / Project
+# -----------------------------------------------------------------------------
+COMPOSE_PROJECT_NAME=open-notebook
+
+# -----------------------------------------------------------------------------
+# Network
+# -----------------------------------------------------------------------------
+# Address the web UI and the REST API are published on. 127.0.0.1 → loopback
+# only, intended to sit behind a reverse proxy. Set BIND_ADDR=0.0.0.0 for direct
+# LAN access – then a password is mandatory (see OPEN_NOTEBOOK_PASSWORD).
+BIND_ADDR=127.0.0.1
+
+# Host ports. The UI and the API are separate listeners inside the container.
+OPEN_NOTEBOOK_UI_PORT=8502
+OPEN_NOTEBOOK_API_PORT=5055
+
+# Host port of the database, published on loopback for local debugging only
+# (Surrealist, `surreal sql`). The app reaches the database over the compose
+# network regardless, so this port is never needed in normal operation.
+SURREAL_PORT=8000
+
+# -----------------------------------------------------------------------------
+# Security
+# -----------------------------------------------------------------------------
+# Encrypts AI provider credentials in the database. Generate once with:
+# openssl rand -hex 32
+# Losing or changing this key makes stored credentials undecryptable. It is in
+# .env, which every backup set contains.
+OPEN_NOTEBOOK_ENCRYPTION_KEY=CHANGEME
+
+# Password for the web UI and the REST API. Authentication is OFF when this is
+# empty – set it whenever the ports are reachable from other machines.
+# Generate once with: openssl rand -hex 16
+OPEN_NOTEBOOK_PASSWORD=CHANGEME
+
+# -----------------------------------------------------------------------------
+# Database
+# -----------------------------------------------------------------------------
+# The credentials are used twice: as --user/--pass for the SurrealDB server and
+# as SURREAL_USER/SURREAL_PASSWORD for the app, so both stay in sync.
+SURREAL_USER=root
+SURREAL_PASSWORD=CHANGEME
+
+# Connection URL as seen from inside the compose network. Only change it when
+# the database runs outside this stack.
+SURREAL_URL=ws://surrealdb:8000/rpc
+
+SURREAL_NAMESPACE=open_notebook
+SURREAL_DATABASE=open_notebook
+
+# User the SurrealDB container runs as. 0:0 (root) is the vendor default and
+# always works with bind mounts. Set it to your own uid:gid to keep the data
+# directory operator-owned – then scripts/backup.sh needs no sudo.
+SURREAL_UID=0
+SURREAL_GID=0
+
+# -----------------------------------------------------------------------------
+# Application
+# -----------------------------------------------------------------------------
+# Largest request body the API accepts, in MB. Raise it for large audio/video
+# uploads. A reverse proxy's own limit (nginx client_max_body_size) still applies.
+OPEN_NOTEBOOK_MAX_UPLOAD_SIZE_MB=100
+
+# Background jobs the worker runs at once. Set to 1 on single-GPU/local-LLM
+# setups so parallel requests do not overload the model.
+OPEN_NOTEBOOK_WORKER_MAX_TASKS=5
+
+# API address as the BROWSER reaches it. Leave empty when the UI and API ports
+# are both reachable under the same host name (auto-detected). Set it when only
+# the UI port is published, e.g. API_URL=https://notebook.example.com
+API_URL=
+
+# -----------------------------------------------------------------------------
+# Data paths (host side, relative to this directory)
+# -----------------------------------------------------------------------------
+# RocksDB database files. Root-owned when SURREAL_UID/SURREAL_GID are 0:0.
+SURREAL_DATA=./data/open-notebook/surreal
+
+# Application data: uploads, caches (uv, Playwright, HuggingFace), TIKTOKEN cache.
+NOTEBOOK_DATA=./data/open-notebook/notebook
+
+# -----------------------------------------------------------------------------
+# Backups
+# -----------------------------------------------------------------------------
+# Where scripts/backup.sh writes its sets. Override per run with --keep-days.
+BACKUP_DIR=./backups
+BACKUP_KEEP_DAYS=7

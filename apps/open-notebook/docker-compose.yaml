@@ -1,0 +1,99 @@
+# =============================================================================
+# Open Notebook – Docker Compose Stack
+# Services: Open Notebook (web UI, REST API and background worker), SurrealDB 2
+#
+# Supported architectures: amd64, arm64
+#
+# First-time setup:
+#   1. cp env-dist .env && chmod 600 .env   → fill in every CHANGEME value
+#   2. ./scripts/bootstrap.sh               → creates data dirs, pulls, starts
+#   3. Open http://127.0.0.1:8502 and sign in with OPEN_NOTEBOOK_PASSWORD
+#
+# Update: ./scripts/upgrade.sh <version>
+# Docs:   https://github.com/lfnovo/open-notebook
+#         https://github.com/lfnovo/open-notebook/blob/main/docs/1-INSTALLATION/docker-compose.md
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # SurrealDB – document database for sources, notes and the job queue
+  #
+  # Runs RocksDB on a bind mount. The vendor compose starts it as root because
+  # a bind mount owned by the host user is only writable for uid 0 inside the
+  # container; SURREAL_UID/SURREAL_GID let you change that. Files are then
+  # owned by that uid, which decides whether scripts/backup.sh needs sudo.
+  # ---------------------------------------------------------------------------
+  surrealdb:
+    image: surrealdb/surrealdb:${SURREALDB_VERSION:?SURREALDB_VERSION must be set in .env}
+    container_name: ${COMPOSE_PROJECT_NAME:-open-notebook}-surrealdb
+    restart: unless-stopped
+    user: "${SURREAL_UID:-0}:${SURREAL_GID:-0}"
+    # List form: each value stays a single argument, so a password containing
+    # spaces is not split. The database path is a directory SurrealDB owns.
+    command:
+      - start
+      - --log
+      - info
+      - --user
+      - ${SURREAL_USER:?SURREAL_USER must be set in .env}
+      - --pass
+      - ${SURREAL_PASSWORD:?SURREAL_PASSWORD must be set in .env}
+      - rocksdb:/mydata/mydatabase.db
+    ports:
+      # Loopback only: the app reaches the database over the compose network.
+      # The host port exists for local tooling (Surrealist, `surreal sql`).
+      - "${BIND_ADDR:-127.0.0.1}:${SURREAL_PORT:-8000}:8000"
+    volumes:
+      - ${SURREAL_DATA:?SURREAL_DATA must be set in .env}:/mydata
+    environment:
+      SURREAL_EXPERIMENTAL_GRAPHQL: "true"
+    # No healthcheck: the image is a single static binary without a shell, so
+    # there is no portable command to probe it. The application retries the
+    # connection on its own; its /health endpoint reports readiness instead.
+
+  # ---------------------------------------------------------------------------
+  # Open Notebook – Next.js UI (8502), FastAPI backend (5055) and worker
+  #
+  # One image, three processes under supervisord. State lives entirely in the
+  # /app/data mount plus the database.
+  # ---------------------------------------------------------------------------
+  open_notebook:
+    image: lfnovo/open_notebook:${OPEN_NOTEBOOK_VERSION:?OPEN_NOTEBOOK_VERSION must be set in .env}
+    container_name: ${COMPOSE_PROJECT_NAME:-open-notebook}-app
+    restart: unless-stopped
+    ports:
+      - "${BIND_ADDR:-127.0.0.1}:${OPEN_NOTEBOOK_UI_PORT:-8502}:8502"
+      - "${BIND_ADDR:-127.0.0.1}:${OPEN_NOTEBOOK_API_PORT:-5055}:5055"
+    environment:
+      # Required: encrypts provider credentials in the database. Without it the
+      # app starts, but saving a provider key in Manage → Models fails.
+      OPEN_NOTEBOOK_ENCRYPTION_KEY: ${OPEN_NOTEBOOK_ENCRYPTION_KEY:?OPEN_NOTEBOOK_ENCRYPTION_KEY must be set in .env}
+      # Empty disables authentication entirely.
+      OPEN_NOTEBOOK_PASSWORD: ${OPEN_NOTEBOOK_PASSWORD:-}
+
+      SURREAL_URL: ${SURREAL_URL:-ws://surrealdb:8000/rpc}
+      SURREAL_USER: ${SURREAL_USER:?SURREAL_USER must be set in .env}
+      SURREAL_PASSWORD: ${SURREAL_PASSWORD:?SURREAL_PASSWORD must be set in .env}
+      SURREAL_NAMESPACE: ${SURREAL_NAMESPACE:-open_notebook}
+      SURREAL_DATABASE: ${SURREAL_DATABASE:-open_notebook}
+
+      OPEN_NOTEBOOK_MAX_UPLOAD_SIZE_MB: ${OPEN_NOTEBOOK_MAX_UPLOAD_SIZE_MB:-100}
+      OPEN_NOTEBOOK_WORKER_MAX_TASKS: ${OPEN_NOTEBOOK_WORKER_MAX_TASKS:-5}
+
+      # Empty means: the browser calls the API on the port of the page it loaded.
+      API_URL: ${API_URL:-}
+    volumes:
+      - ${NOTEBOOK_DATA:?NOTEBOOK_DATA must be set in .env}:/app/data
+    depends_on:
+      - surrealdb
+    healthcheck:
+      # The backend serves /health on 5055. Python is present in the image, so
+      # no extra tooling is needed. start_period covers first-boot initialisation.
+      test:
+        - CMD-SHELL
+        - python -c "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:5055/health', timeout=5).status == 200 else 1)"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s

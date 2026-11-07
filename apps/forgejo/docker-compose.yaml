@@ -1,0 +1,124 @@
+# =============================================================================
+# Forgejo – Docker Compose Stack
+# Services: Forgejo (web UI, API and built-in SSH server), PostgreSQL 18
+#
+# Supported architectures: amd64, arm64, arm
+#
+# First-time setup:
+#   1. cp env-dist .env && chmod 600 .env   → fill in every CHANGEME value
+#   2. ./scripts/bootstrap.sh               → creates data dirs, pulls, starts
+#   3. Open FORGEJO_ROOT_URL and create the first account (it becomes admin)
+#   4. Set FORGEJO_DISABLE_REGISTRATION=true in .env and re-run `up -d`
+#
+# Update: ./scripts/upgrade.sh <version>
+#         A major jump (16 → 17) needs a manual step; the script refuses it and
+#         points at the upstream upgrade guide.
+# Docs:   https://forgejo.org/docs/latest/admin/installation-docker/
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Forgejo – git forge: web UI, REST API and the built-in SSH server
+  #
+  # Runs as USER_UID/USER_GID inside the container. The /data volume must be
+  # owned by exactly that UID/GID, otherwise the container refuses to start
+  # ("permission denied" while creating app.ini). scripts/bootstrap.sh applies
+  # the chown; a plain `docker compose up -d` does not.
+  #
+  # Configuration is driven entirely by environment variables of the form
+  # FORGEJO__<section>__<KEY> (double underscore). The image renders them into
+  # /data/gitea/conf/app.ini on start; the file stays editable afterwards.
+  # ---------------------------------------------------------------------------
+  server:
+    image: codeberg.org/forgejo/forgejo:${FORGEJO_VERSION:?FORGEJO_VERSION must be set in .env}
+    container_name: ${COMPOSE_PROJECT_NAME:-forgejo}
+    restart: unless-stopped
+    environment:
+      # Ownership the container expects on /data. Changing these later without
+      # chowning the volume leaves the instance unable to write.
+      USER_UID: ${FORGEJO_UID:-1000}
+      USER_GID: ${FORGEJO_GID:-1000}
+
+      # --- [server] ---------------------------------------------------------
+      # Exactly what users type in the browser, trailing slash included.
+      FORGEJO__server__ROOT_URL: ${FORGEJO_ROOT_URL:?FORGEJO_ROOT_URL must be set in .env}
+      FORGEJO__server__DOMAIN: ${FORGEJO_DOMAIN:-localhost}
+      # Inside the container the web server always listens on 3000.
+      FORGEJO__server__HTTP_PORT: "3000"
+      # Built-in SSH server: listens on 22 inside, advertised on the host port.
+      # Both values must be consistent or clone URLs point at the wrong port.
+      FORGEJO__server__START_SSH_SERVER: "true"
+      FORGEJO__server__SSH_LISTEN_PORT: "22"
+      FORGEJO__server__SSH_PORT: ${FORGEJO_SSH_PORT:-2222}
+      FORGEJO__server__SSH_DOMAIN: ${FORGEJO_SSH_DOMAIN:-localhost}
+
+      # --- [database] -------------------------------------------------------
+      FORGEJO__database__DB_TYPE: postgres
+      FORGEJO__database__HOST: db:5432
+      FORGEJO__database__NAME: ${POSTGRES_DB:?POSTGRES_DB must be set in .env}
+      FORGEJO__database__USER: ${POSTGRES_USER:?POSTGRES_USER must be set in .env}
+      FORGEJO__database__PASSWD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      FORGEJO__database__SSL_MODE: disable
+
+      # --- [security] -------------------------------------------------------
+      # Losing SECRET_KEY invalidates sessions; losing JWT_SECRET invalidates
+      # OAuth2 tokens. Both are in the backup set via .env.
+      FORGEJO__security__SECRET_KEY: ${FORGEJO_SECRET_KEY:?FORGEJO_SECRET_KEY must be set in .env}
+      FORGEJO__security__INTERNAL_TOKEN: ${FORGEJO_INTERNAL_TOKEN:?FORGEJO_INTERNAL_TOKEN must be set in .env}
+      FORGEJO__oauth2__JWT_SECRET: ${FORGEJO_JWT_SECRET:?FORGEJO_JWT_SECRET must be set in .env}
+
+      # --- [service] --------------------------------------------------------
+      FORGEJO__service__DISABLE_REGISTRATION: ${FORGEJO_DISABLE_REGISTRATION:-false}
+      # Set to true behind a TLS-terminating reverse proxy.
+      FORGEJO__server__ENABLE_PROXY_PROTOCOL: "false"
+    ports:
+      # <bind>:<host port>:<container port>. The UI is loopback-only by default.
+      - "${BIND_ADDR:-127.0.0.1}:${FORGEJO_HTTP_PORT:-3000}:3000"
+      # SSH has to be reachable by git clients; restrict via firewall, not by
+      # binding to loopback.
+      - "${FORGEJO_SSH_BIND:-0.0.0.0}:${FORGEJO_SSH_PORT:-2222}:22"
+    volumes:
+      # The single state volume: app.ini, repositories, LFS, avatars,
+      # attachments, SSH host keys, indexer data.
+      - ${FORGEJO_DATA:?FORGEJO_DATA must be set in .env}:/data
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      db:
+        condition: service_healthy   # wait for the DB healthcheck before starting
+    healthcheck:
+      # /api/healthz is served by Forgejo itself. wget comes from the Alpine
+      # base image, so no extra tooling is needed inside the container.
+      test: ["CMD-SHELL", "wget -q --tries=1 -O /dev/null http://127.0.0.1:3000/api/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL 18 – persistent database
+  #
+  # PGDATA path: postgres:18 uses /var/lib/postgresql/18/docker and declares
+  # /var/lib/postgresql as its volume, so the mount point is the parent
+  # directory. postgres:16/17 used /var/lib/postgresql/data instead – mounting
+  # that older path here would leave the real data outside the volume and lose
+  # it on the next container recreation. Do NOT set PGDATA yourself: the image
+  # default carries the major version and follows it across a major upgrade.
+  # ---------------------------------------------------------------------------
+  db:
+    image: postgres:${POSTGRES_VERSION:?POSTGRES_VERSION must be set in .env}
+    container_name: ${COMPOSE_PROJECT_NAME:-forgejo}-db
+    restart: unless-stopped
+    volumes:
+      - ${POSTGRES_DATA:?POSTGRES_DATA must be set in .env}:/var/lib/postgresql
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB must be set in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+    healthcheck:
+      # $$ escaping prevents Compose from expanding the variables at parse time
+      test: ["CMD-SHELL", "pg_isready -h localhost -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
