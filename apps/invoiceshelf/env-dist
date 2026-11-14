@@ -1,0 +1,279 @@
+# =============================================================================
+# InvoiceShelf – Environment Distribution File
+# Copy this file to ".env" and fill in your values before starting the stack.
+#
+#   cp env-dist .env
+#   chmod 600 .env
+#
+# Every value marked CHANGEME must be replaced before the first start –
+# scripts/bootstrap.sh does that for you and generates the secrets.
+#
+# This file is read twice: by Docker Compose (interpolation) and as env_file by
+# both services. Keep it shell-compatible: no spaces around "=", no unescaped $.
+#
+# The application's own reference for these names is .env.example in the
+# InvoiceShelf repository at the pinned tag (2.x branch). Values that are only
+# useful when you enable a feature are commented out on purpose: an active line
+# overrides the application's default, so only enable what you actually need.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Compose / Project
+# -----------------------------------------------------------------------------
+
+# Prefix for all container names of this stack.
+COMPOSE_PROJECT_NAME=invoiceshelf
+
+# -----------------------------------------------------------------------------
+# Docker Images
+# -----------------------------------------------------------------------------
+
+# InvoiceShelf image tag. Pin a released version, never "latest": an unpinned
+# tag pulls an arbitrary version on the next `docker compose pull`.
+# Tags: https://hub.docker.com/r/invoiceshelf/invoiceshelf/tags
+# Releases: https://github.com/InvoiceShelf/InvoiceShelf/releases
+#
+# 2.4.7 is the current stable release (2026-10-21). It carries the PHP fix for
+# CVE-2026-109618 and CVE-2026-109619; every image up to 2.4.6 runs the affected
+# PHP 8.4.25. Do not go below 2.4.7.
+#
+# The 3.x line is an alpha preview (3.0.0-alpha.x) and must not be used with
+# production data. 2.x receives security patches until 2027-09-01.
+INVOICESHELF_VERSION=2.4.7
+
+# PostgreSQL image tag. The upstream Compose variants ship 16; scripts/upgrade.sh
+# refuses a jump to another major without an explicit confirmation.
+POSTGRES_VERSION=16
+
+# -----------------------------------------------------------------------------
+# Network
+# -----------------------------------------------------------------------------
+
+# Address the InvoiceShelf web UI is published on.
+#   127.0.0.1 → loopback only, intended to sit behind a reverse proxy (default)
+#   0.0.0.0   → reachable from the LAN
+# Restrict access with a firewall/VLAN if you bind to 0.0.0.0.
+INVOICESHELF_BIND_ADDR=127.0.0.1
+
+# Host port mapped to the container's port 8080. The container port is fixed by
+# the image's nginx configuration – the host port is the one you change.
+INVOICESHELF_HOST_PORT=8090
+
+# -----------------------------------------------------------------------------
+# Storage
+# -----------------------------------------------------------------------------
+
+# Host path for storage/: uploads, generated PDFs, the compiled views, sessions,
+# logs and the persisted APP_KEY (storage/app/.app_key).
+# Must be writable by INVOICESHELF_UID – scripts/bootstrap.sh sets that up.
+INVOICESHELF_STORAGE=./data/invoiceshelf/storage
+
+# Host path for Modules/: installed application modules. Separate volume on
+# purpose, so a module stays in place when storage is restored from a backup.
+INVOICESHELF_MODULES=./data/invoiceshelf/modules
+
+# Host path for the persistent PostgreSQL data files.
+# A missing or empty directory here is a hard error, not a silent fresh start.
+POSTGRES_DATA=./data/invoiceshelf/postgres
+
+# User/group the container runs as. Fixed by the image: uid 82 (www-data),
+# gid 82. The host directories above must belong to exactly this uid/gid, or
+# the container refuses to start with "Cannot write to /var/www/html/storage".
+# Under rootless Docker keep 82 – the mapping happens at kernel level.
+INVOICESHELF_UID=82
+INVOICESHELF_GID=82
+
+# -----------------------------------------------------------------------------
+# Application
+# -----------------------------------------------------------------------------
+
+# Name shown in the browser tab and in outgoing mail.
+APP_NAME=InvoiceShelf
+
+# "production" or "local". Keep production for a real installation.
+APP_ENV=production
+
+# Never "true" in production: a stack trace with environment values reaches the
+# browser on every error.
+APP_DEBUG=false
+
+# Signs cookies and encrypted values. Generate one with:
+#   echo "base64:$(openssl rand -base64 32)"
+# scripts/bootstrap.sh fills this in. Changing it later logs every user out and
+# makes previously encrypted values unreadable. If left empty, the container
+# generates a key on first start and keeps it in storage/app/.app_key.
+APP_KEY=CHANGEME
+
+# Timezone used for dates in the UI and in generated documents.
+# Full list: https://en.wikipedia.org/wiki/List_of_tz_database_time_zone
+APP_TIMEZONE=UTC
+
+# Public URL exactly as typed in the browser. Protocol + host/IP, plus the port
+# if it is not 80/443. A wrong value breaks login (Sanctum rejects the origin),
+# mail links and PDF links.
+APP_URL=http://localhost:8090
+
+# Interface language of the installation.
+APP_LOCALE=en
+
+# -----------------------------------------------------------------------------
+# Database
+# -----------------------------------------------------------------------------
+
+# Engine. pgsql is the variant this stack is built around; sqlite and mysql are
+# also supported by the image but need a different service layout.
+DB_CONNECTION=pgsql
+
+# Credentials – the database name, user and password are shared by the app and
+# the db service. Taking them from one variable each is the only way to keep
+# both sides in sync. Changing them on an existing instance points the app at a
+# database that does not exist; the password only takes effect on first start.
+POSTGRES_DB=invoiceshelf
+POSTGRES_USER=invoiceshelf
+POSTGRES_PASSWORD=CHANGEME
+
+# -----------------------------------------------------------------------------
+# Session / Cookies
+# -----------------------------------------------------------------------------
+
+# "file" keeps sessions on the storage volume. "database" would put them in the
+# sessions table and survive a container recreation without the volume.
+SESSION_DRIVER=file
+
+# Session lifetime in minutes. 240 = 4 hours of inactivity.
+SESSION_LIFETIME=240
+
+# Bare hostname or IP – no protocol, no path. Must match APP_URL's host.
+SESSION_DOMAIN=localhost
+
+# Comma-separated host:port pairs that may authenticate with session cookies.
+# Must contain APP_URL's host and port, otherwise every login request is
+# rejected as unauthenticated. Add further origins comma-separated.
+SANCTUM_STATEFUL_DOMAINS=localhost:8090
+
+# Send cookies only over HTTPS. Set to true as soon as the instance is served
+# through a TLS reverse proxy; leave false while testing over plain HTTP.
+# SESSION_SECURE_COOKIE=false
+
+# -----------------------------------------------------------------------------
+# Cache / Queue
+# -----------------------------------------------------------------------------
+
+# "file" needs no extra service. "redis" needs a redis container in the stack.
+CACHE_STORE=file
+
+# "sync" runs queued work (the in-app backup job) inside the request. "database"
+# needs a worker container – this stack has none, so keep sync.
+QUEUE_CONNECTION=sync
+
+# Broadcast driver. "log" needs no extra service.
+BROADCAST_CONNECTION=log
+
+# -----------------------------------------------------------------------------
+# Scheduler
+# -----------------------------------------------------------------------------
+
+# The image runs Laravel's scheduler itself. That is what creates recurring
+# invoices, flags overdue documents and expires estimates – without it those
+# features silently do nothing. Set to false only if you drive the schedule from
+# a separate container.
+SCHEDULER_ENABLED=true
+
+# Optional: shared secret for GET /api/cron, for installations whose schedule is
+# driven by an external service instead of the built-in scheduler. The external
+# service sends it in the "x-authorization-token" header. Generate one with
+#   openssl rand -hex 32
+# CRON_JOB_AUTH_TOKEN=
+
+# -----------------------------------------------------------------------------
+# Container start-up (serversideup/php base image)
+# -----------------------------------------------------------------------------
+
+# Run the image's start-up automation (artisan optimize etc.) on every boot.
+AUTORUN_ENABLED=true
+
+# Run "artisan migrate --force" on every boot. The upstream Compose files set
+# this to false and the in-app updater is disabled in containers, so migrations
+# are run explicitly by scripts/upgrade.sh instead. Set to true only if you
+# prefer migrations on every container start and accept that a failed migration
+# blocks the boot.
+AUTORUN_LARAVEL_MIGRATION=false
+
+# Warm the config/route/view caches on boot. Slightly longer start, faster
+# requests. Set to true once the installation is stable.
+AUTORUN_LARAVEL_OPTIMIZE=false
+
+# PHP OPcache. 1 = enabled. Disable only while debugging PHP behaviour.
+PHP_OPCACHE_ENABLE=1
+
+# -----------------------------------------------------------------------------
+# Mail
+# -----------------------------------------------------------------------------
+# Mail is NOT configured here. Since InvoiceShelf 2.2.0 the transport is stored
+# in the database and set in the UI:
+#   Administration → Settings → Mail Configuration   (server-wide, super admin)
+#   Settings → Mail Configuration                    (per company)
+# Supported transports: SMTP, sendmail, PHP mail(), Amazon SES, Mailgun, Postmark.
+#
+# The variables below only override the fallback defaults. Leave them commented
+# out unless you have a reason to bypass the UI.
+#
+# Sender address and name used when the database has no setting yet.
+# MAIL_FROM_ADDRESS=invoices@example.com
+# MAIL_FROM_NAME=InvoiceShelf
+#
+# Transport: smtp, sendmail, ses, mailgun, postmark, log, array.
+# MAIL_MAILER=smtp
+# MAIL_HOST=smtp.example.com
+# MAIL_PORT=587
+# MAIL_USERNAME=invoices@example.com
+# MAIL_PASSWORD=
+# MAIL_SCHEME=STARTTLS
+# MAIL_EHLO_DOMAIN=example.com
+#
+# Path to the sendmail binary, used when MAIL_MAILER=sendmail. The binary comes
+# from the server, never from the settings screen.
+# MAIL_SENDMAIL_PATH=/usr/sbin/sendmail -bs -i
+#
+# Company owners may only use publicly reachable mail hosts. Name a local relay
+# here (comma-separated) if they should be allowed to use it:
+# MAIL_ALLOWED_PRIVATE_HOSTS=mail.lan,192.168.1.10
+
+# -----------------------------------------------------------------------------
+# PDF generation
+# -----------------------------------------------------------------------------
+
+# dompdf renders in PHP and needs no extra service. Keep DOMPDF_ENABLE_REMOTE at
+# false: with it enabled, HTML in PDF notes can make the server fetch arbitrary
+# URLs (SSRF).
+DOMPDF_ENABLE_REMOTE=false
+# PDF_DRIVER=dompdf
+
+# Gotenberg as an alternative PDF driver. It is a sidecar on a private network,
+# which the SSRF guard rejects – name that one host to exempt it. Leave the
+# whole block commented out unless you actually run Gotenberg.
+# PDF_DRIVER=gotenberg
+# GOTENBERG_HOST=http://pdf:3000
+# GOTENBERG_PAPERSIZE=210mm 297mm
+# GOTENBERG_ALLOWED_PRIVATE_HOST=http://pdf:3000
+
+# -----------------------------------------------------------------------------
+# Reverse proxy / security
+# -----------------------------------------------------------------------------
+
+# Proxies whose X-Forwarded-* headers are trusted. "*" trusts every proxy, which
+# is acceptable while the port is bound to 127.0.0.1. Behind a reverse proxy,
+# set the proxy's address instead – otherwise a client can forge its own IP.
+TRUSTED_PROXIES=*
+
+# -----------------------------------------------------------------------------
+# Backups
+# -----------------------------------------------------------------------------
+
+# Host path where scripts/backup.sh writes its timestamped backup sets
+# (and where scripts/upgrade.sh keeps its pre-upgrade safety nets).
+BACKUP_DIR=./backups
+
+# How many days a backup set is kept before scripts/backup.sh prunes it.
+# Override per run with: ./scripts/backup.sh --keep-days 30
+BACKUP_KEEP_DAYS=7

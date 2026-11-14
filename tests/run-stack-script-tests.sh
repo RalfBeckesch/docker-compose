@@ -102,6 +102,8 @@ build_sandbox() {
       host_path_vars=(SURREAL_DATA NOTEBOOK_DATA) ;;
     leantime)
       host_path_vars=(MARIADB_DATA LEAN_USERFILES LEAN_PUBLIC_USERFILES LEAN_PLUGINS LEAN_LOGS) ;;
+    invoiceshelf)
+      host_path_vars=(INVOICESHELF_STORAGE INVOICESHELF_MODULES POSTGRES_DATA) ;;
     *) host_path_vars=() ;;
   esac
 
@@ -134,6 +136,10 @@ build_sandbox() {
       ;;
     vikunja)
       printf 'uploaded file payload\n' > "${target}/data/vikunja-files/attachment.bin"
+      ;;
+    invoiceshelf)
+      printf 'uploaded file payload\n' > "${target}/data/invoiceshelf/storage/upload.bin"
+      printf 'module payload\n' > "${target}/data/invoiceshelf/modules/example.bin"
       ;;
   esac
 
@@ -233,6 +239,13 @@ test_upgrade_script() {
       check_contains "${app}: health check passed" "Leantime is answering" "${output}"
       check_contains "${app}: migrations were run" "running the database migrations" "${output}"
       ;;
+    invoiceshelf)
+      # Online dump plus an archive of storage/ and Modules/, no stop.
+      check_contains "${app}: database dump verified" "dump verified" "${output}"
+      check_contains "${app}: resolved configuration confirmed" "resolved configuration confirmed" "${output}"
+      check_contains "${app}: health check passed" "InvoiceShelf is answering" "${output}"
+      check_contains "${app}: migrations were run" "running the database migrations" "${output}"
+      ;;
     *)
       check_contains "${app}: database dump verified" "dump verified" "${output}"
       ;;
@@ -272,6 +285,7 @@ version_key() {
     forgejo)                         printf 'FORGEJO_VERSION' ;;
     open-notebook)                   printf 'OPEN_NOTEBOOK_VERSION' ;;
     leantime)                        printf 'LEANTIME_VERSION' ;;
+    invoiceshelf)                    printf 'INVOICESHELF_VERSION' ;;
   esac
 }
 
@@ -330,6 +344,7 @@ expected_backup_files() {
     forgejo)                         printf 'forgejo-dump.tar.gz env.backup MANIFEST.txt images.txt' ;;
     open-notebook)                   printf 'state.tar.gz env.backup MANIFEST.txt images.txt' ;;
     leantime)                        printf 'db.sql.gz data.tar.gz env.backup MANIFEST.txt images.txt' ;;
+    invoiceshelf)                    printf 'db.sql.gz data.tar.gz env.backup MANIFEST.txt images.txt' ;;
   esac
 }
 
@@ -431,6 +446,12 @@ test_backup_script() {
       check_contains "${app}: data archive verified" "data archive verified" "${output}"
       check_contains "${app}: userfiles archived" "userfiles is part of the archive" "${output}"
       ;;
+    invoiceshelf)
+      # Online dump plus an archive of storage/ and Modules/; no stop needed.
+      check_contains "${app}: database dump verified" "database dump verified" "${output}"
+      check_contains "${app}: data archive verified" "data archive verified" "${output}"
+      check_contains "${app}: storage archived" "storage is part of the archive" "${output}"
+      ;;
     *)
       check_contains "${app}: database dump verified" "database dump verified" "${output}"
       ;;
@@ -514,6 +535,9 @@ main() {
   test_upgrade_script "leantime" "upgrade.sh" "3.13.3" ".env"
   test_bootstrap_script "leantime" ".env"
   test_backup_script "leantime" ".env"
+  test_upgrade_script "invoiceshelf" "upgrade.sh" "2.4.8" ".env"
+  test_bootstrap_script "invoiceshelf" ".env"
+  test_backup_script "invoiceshelf" ".env"
 
   echo
   echo "=== ${PASS} OK, ${FAIL} FAIL ==="

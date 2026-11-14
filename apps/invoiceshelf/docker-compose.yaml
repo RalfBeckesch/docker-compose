@@ -1,0 +1,115 @@
+# =============================================================================
+# InvoiceShelf – Docker Compose Stack
+# Services: InvoiceShelf (Laravel/PHP invoicing), PostgreSQL 16
+#
+# Supported architectures: amd64, arm64
+#
+# First-time setup:
+#   1. cp env-dist .env && chmod 600 .env   → fill in every CHANGEME value
+#   2. ./scripts/bootstrap.sh               → creates data dirs, pulls, starts
+#   3. Open the UI and complete the setup wizard (the first account is the admin)
+#   4. Set SESSION_SECURE_COOKIE=true once the instance runs behind TLS
+#
+# Update: ./scripts/upgrade.sh <version>
+#         (`docker compose pull && docker compose up -d` works too, but skips
+#          the verified backup, the version check and the database migration)
+# Docs:   https://docs.invoiceshelf.com/
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # InvoiceShelf – web UI and API in one container
+  #
+  # The image runs as www-data (uid 82, gid 82) and ships an s6-overlay init that
+  # starts nginx and PHP-FPM. It does NOT take ownership of the mounted storage
+  # directory: that directory must belong to 82:82 on the host, or the container
+  # stops at boot with "Cannot write to /var/www/html/storage" (upstream issue
+  # InvoiceShelf/docker#77). scripts/bootstrap.sh applies the chown; a plain
+  # `docker compose up -d` does not.
+  #
+  # The app's .env is generated inside the container on first start from the
+  # environment below. APP_KEY is kept in storage/app/.app_key when the
+  # environment does not provide one.
+  # ---------------------------------------------------------------------------
+  invoiceshelf:
+    image: invoiceshelf/invoiceshelf:${INVOICESHELF_VERSION:?INVOICESHELF_VERSION must be set in .env}
+    container_name: ${COMPOSE_PROJECT_NAME:-invoiceshelf}
+    restart: unless-stopped
+    # Fixed by the image. Explicit here so the host ownership requirement is
+    # visible in the Compose file instead of only in bootstrap.sh.
+    user: "${INVOICESHELF_UID:-82}:${INVOICESHELF_GID:-82}"
+    # Application variables come from .env. The database credentials are mapped
+    # explicitly below so they always match the db service – env_file values are
+    # passed through verbatim, without ${VAR} interpolation.
+    env_file: .env
+    ports:
+      # <bind_address>:<host_port> -> container port 8080 (fixed by the image).
+      # Loopback by default: intended to sit behind a reverse proxy.
+      # For direct LAN access set INVOICESHELF_BIND_ADDR=0.0.0.0 in .env.
+      - "${INVOICESHELF_BIND_ADDR:-127.0.0.1}:${INVOICESHELF_HOST_PORT:-8090}:8080"
+    volumes:
+      # Uploads, generated PDFs, views, sessions, logs and storage/app/.app_key.
+      - ${INVOICESHELF_STORAGE:?INVOICESHELF_STORAGE must be set in .env}:/var/www/html/storage
+      # Installed application modules.
+      - ${INVOICESHELF_MODULES:?INVOICESHELF_MODULES must be set in .env}:/var/www/html/Modules
+    environment:
+      # Database wiring. The service name is fixed by the network below.
+      # DB_* must equal POSTGRES_*; taking them from the same variables is the
+      # only way to guarantee that.
+      DB_CONNECTION: ${DB_CONNECTION:-pgsql}
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_DATABASE: ${POSTGRES_DB:?POSTGRES_DB must be set in .env}
+      DB_USERNAME: ${POSTGRES_USER:?POSTGRES_USER must be set in .env}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+    depends_on:
+      db:
+        condition: service_healthy   # wait for the DB healthcheck before starting
+    healthcheck:
+      # /healthcheck is served by the base image (serversideup/php) on port 8080,
+      # not by Laravel. It answers as soon as nginx and PHP-FPM are up, and fails
+      # if either process is down. The path is configurable via HEALTHCHECK_PATH.
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # First start creates the storage layout and the app's .env; give it room.
+      start_period: 120s
+    networks:
+      - invoiceshelf
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL 16 – persistent database
+  #
+  # The entrypoint starts as root and fixes the ownership of PGDATA itself, so
+  # the host directory is deliberately not chowned by bootstrap.sh.
+  #
+  # PGDATA is /var/lib/postgresql/data for postgres:16. A later jump to
+  # postgres:18 changes that path to /var/lib/postgresql/<major>/docker – the
+  # mount point moves, and the data needs a dump/restore rather than a volume
+  # swap. scripts/upgrade.sh refuses a major jump without confirmation.
+  # ---------------------------------------------------------------------------
+  db:
+    image: postgres:${POSTGRES_VERSION:?POSTGRES_VERSION must be set in .env}
+    container_name: ${COMPOSE_PROJECT_NAME:-invoiceshelf}-db
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ${POSTGRES_DATA:?POSTGRES_DATA must be set in .env}:/var/lib/postgresql/data
+    healthcheck:
+      # $$ escaping prevents Compose from expanding the variables at parse time;
+      # they are expanded inside the container from its own environment.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      # The first start initializes the data directory, which takes minutes on
+      # slow storage. Failed checks in this window don't count.
+      start_period: 300s
+    networks:
+      - invoiceshelf
+
+networks:
+  invoiceshelf:
+    driver: bridge
